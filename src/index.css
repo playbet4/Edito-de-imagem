@@ -1,3 +1,29 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+
+  /**
+   * Accessible focus ring aligned with Loft orange accent.
+   */
+  :where(button, [href], input, select, textarea, summary):focus-visible {
+    @apply outline-none ring-2 ring-loft-orange ring-offset-2 ring-offset-white;
+  }
+}
+
+@layer utilities {
+  /**
+   * Frosted panel used for main shell and cards (Loft glassmorphism).
+   */
+  .glass-panel {
+    @apply rounded-3xl border border-white/40 bg-white/75 shadow-loft backdrop-blur-md;
+  }
+
+  .glass-panel-inset {
+    @apply rounded-2xl border border-loft-green/10 bg-white/60 shadow-inner backdrop-blur-sm;
+  }
+}

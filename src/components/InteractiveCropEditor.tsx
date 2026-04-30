@@ -211,28 +211,20 @@ export function InteractiveCropEditor({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900 tracking-tight">Área de recorte</h3>
-          <p className="text-xs text-gray-500 mt-1 max-w-xl leading-relaxed">
-            Clique e arraste dentro da moldura para mover, ou arraste os cantos para ajustar — como em editores
-            modernos. O quadro reflete a arte já processada (incluindo remoção de fundo).
-          </p>
-        </div>
+      <div className="flex justify-end">
         <button
           type="button"
           disabled={disabled || cropBounds === null}
           onClick={() => onCropChange(null)}
-          className="shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:pointer-events-none shadow-sm"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-loft-green bg-white/90 border border-loft-green/25 px-4 py-2 rounded-full hover:bg-white hover:border-loft-green/40 disabled:opacity-40 disabled:pointer-events-none shadow-sm transition-colors"
         >
           <RotateCcw size={14} /> Recorte automático
         </button>
       </div>
 
       <div
-        className="rounded-xl border border-slate-200 shadow-inner overflow-hidden"
+        className="rounded-2xl border border-loft-green/10 shadow-inner overflow-hidden bg-slate-100/50"
         style={{
-          backgroundColor: '#f3f4f6',
           backgroundImage: `linear-gradient(45deg, #e5e7eb 25%, transparent 25%),
             linear-gradient(-45deg, #e5e7eb 25%, transparent 25%),
             linear-gradient(45deg, transparent 75%, #e5e7eb 75%),
@@ -242,7 +234,9 @@ export function InteractiveCropEditor({
         }}
       >
         {!autoBounds ? (
-          <div className="py-14 text-center text-sm text-gray-500">Nenhum conteúdo visível para recortar.</div>
+          <div className="py-14 text-center text-sm text-loft-green/70">
+            Nenhum conteúdo visível para recortar.
+          </div>
         ) : (
           <div className="flex justify-center p-4">
             <div className="relative inline-block max-w-full">
@@ -253,18 +247,18 @@ export function InteractiveCropEditor({
                 draggable={false}
                 onLoad={onImgLoad}
                 onPointerDown={pointerDown}
-                className="block max-h-[min(320px,55vh)] w-auto h-auto max-w-full object-contain select-none cursor-crosshair touch-none"
+                className="block max-h-[min(320px,55vh)] w-auto h-auto max-w-full object-contain select-none cursor-crosshair touch-none rounded-xl"
                 style={{ touchAction: 'none' }}
               />
 
               {cropStyle && img && effective && (
                 <>
                   <div
-                    className="pointer-events-none absolute bg-slate-900/55 z-10"
+                    className="pointer-events-none absolute bg-loft-green/50 z-10"
                     style={{ left: 0, top: 0, width: cw, height: cropStyle.top as number }}
                   />
                   <div
-                    className="pointer-events-none absolute bg-slate-900/55 z-10"
+                    className="pointer-events-none absolute bg-loft-green/50 z-10"
                     style={{
                       left: 0,
                       top: (cropStyle.top as number) + (cropStyle.height as number),
@@ -273,7 +267,7 @@ export function InteractiveCropEditor({
                     }}
                   />
                   <div
-                    className="pointer-events-none absolute bg-slate-900/55 z-10"
+                    className="pointer-events-none absolute bg-loft-green/50 z-10"
                     style={{
                       left: 0,
                       top: cropStyle.top as number,
@@ -282,7 +276,7 @@ export function InteractiveCropEditor({
                     }}
                   />
                   <div
-                    className="pointer-events-none absolute bg-slate-900/55 z-10"
+                    className="pointer-events-none absolute bg-loft-green/50 z-10"
                     style={{
                       left: (cropStyle.left as number) + (cropStyle.width as number),
                       top: cropStyle.top as number,
@@ -292,7 +286,7 @@ export function InteractiveCropEditor({
                   />
 
                   <div
-                    className="pointer-events-none absolute border-2 border-white ring-1 ring-slate-950 rounded-sm z-20 shadow-lg box-border"
+                    className="pointer-events-none absolute border-2 border-white ring-2 ring-loft-green rounded-md z-20 shadow-lg box-border"
                     style={cropStyle}
                   />
                   {(['nw', 'ne', 'sw', 'se'] as const).map((id) => {
@@ -307,7 +301,7 @@ export function InteractiveCropEditor({
                     return (
                       <span
                         key={id}
-                        className="pointer-events-none absolute z-30 w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 bg-white border-2 border-slate-900 rounded-sm shadow-md"
+                        className="pointer-events-none absolute z-30 w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 bg-white border-2 border-loft-green rounded-sm shadow-md"
                         style={{ left: l, top: t }}
                       />
                     );
