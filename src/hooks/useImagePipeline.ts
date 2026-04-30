@@ -4,6 +4,7 @@ import type {
   BgRemovalMethod,
   ImagePipelineParams,
   OutputFormat,
+  WatermarkColorMode,
 } from '../types/imagePipeline';
 import { useDebouncedValue } from './useDebouncedValue';
 
@@ -18,14 +19,19 @@ export function useImagePipeline(
   options: {
     tolerance: number;
     padding: number;
+    manualCropExtra: number;
     removeBackground: boolean;
     selectedFormat: OutputFormat;
     upscaleMultiplier: number;
     bgRemovalMethod: BgRemovalMethod;
+    watermarkEnabled: boolean;
+    watermarkColorMode: WatermarkColorMode;
+    watermarkOpacityPercent: number;
   }
 ): { processedSrc: string | null; isProcessing: boolean } {
   const debouncedTolerance = useDebouncedValue(options.tolerance, 200);
   const debouncedPadding = useDebouncedValue(options.padding, 200);
+  const debouncedManualCropExtra = useDebouncedValue(options.manualCropExtra, 200);
 
   const [processedSrc, setProcessedSrc] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -35,6 +41,9 @@ export function useImagePipeline(
     selectedFormat,
     upscaleMultiplier,
     bgRemovalMethod,
+    watermarkEnabled,
+    watermarkColorMode,
+    watermarkOpacityPercent,
   } = options;
 
   useEffect(() => {
@@ -51,10 +60,14 @@ export function useImagePipeline(
       const merged: ImagePipelineParams = {
         tolerance: debouncedTolerance,
         padding: debouncedPadding,
+        manualCropExtra: debouncedManualCropExtra,
         removeBackground,
         selectedFormat,
         upscaleMultiplier,
         bgRemovalMethod,
+        watermarkEnabled,
+        watermarkColorMode,
+        watermarkOpacityPercent,
       };
       const out = processImageToPng(img, merged);
       setProcessedSrc(out);
@@ -71,10 +84,14 @@ export function useImagePipeline(
     imageSrc,
     debouncedTolerance,
     debouncedPadding,
+    debouncedManualCropExtra,
     removeBackground,
     selectedFormat,
     upscaleMultiplier,
     bgRemovalMethod,
+    watermarkEnabled,
+    watermarkColorMode,
+    watermarkOpacityPercent,
   ]);
 
   return { processedSrc, isProcessing };

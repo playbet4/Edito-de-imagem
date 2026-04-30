@@ -13,10 +13,11 @@ import {
   MonitorUp,
   Wand2,
   KeyRound,
+  Droplets,
 } from 'lucide-react';
 import { useImagePipeline } from './hooks/useImagePipeline';
 import { requestBrandKitFromGemini } from './lib/brandKitGemini';
-import type { OutputFormat } from './types/imagePipeline';
+import type { OutputFormat, WatermarkColorMode } from './types/imagePipeline';
 import type { AiBrandData } from './types/brandKit';
 
 export default function App() {
@@ -31,6 +32,11 @@ export default function App() {
   const [removeBackground, setRemoveBackground] = useState(true);
   const [tolerance, setTolerance] = useState(15);
   const [padding, setPadding] = useState(40);
+  const [manualCropExtra, setManualCropExtra] = useState(0);
+
+  const [watermarkEnabled, setWatermarkEnabled] = useState(false);
+  const [watermarkColorMode, setWatermarkColorMode] = useState<WatermarkColorMode>('white');
+  const [watermarkOpacityPercent, setWatermarkOpacityPercent] = useState(40);
 
   const [selectedFormat, setSelectedFormat] = useState<OutputFormat>('custom');
   const [upscaleMultiplier, setUpscaleMultiplier] = useState(1);
@@ -44,10 +50,14 @@ export default function App() {
   const { processedSrc, isProcessing } = useImagePipeline(imageSrc, {
     tolerance,
     padding,
+    manualCropExtra,
     removeBackground,
     selectedFormat,
     upscaleMultiplier,
     bgRemovalMethod,
+    watermarkEnabled,
+    watermarkColorMode,
+    watermarkOpacityPercent,
   });
 
   const checkeredStyle: React.CSSProperties = {
@@ -136,6 +146,7 @@ export default function App() {
     if (selectedFormat === 'relatorio') filename = 'relatorio.png';
     else if (selectedFormat === 'site') filename = 'LOGO_SITE.png';
     else if (selectedFormat === 'favicon') filename = 'favicon.png';
+    if (watermarkEnabled) filename = `marca_dagua_${filename}`;
 
     link.download = filename;
     document.body.appendChild(link);
@@ -326,6 +337,75 @@ export default function App() {
                       />
                     </div>
                   )}
+
+                  <div className="space-y-2 pt-2 border-t border-gray-100 mt-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Corte manual extra</span>
+                      <span className="text-gray-400">{manualCropExtra}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={manualCropExtra}
+                      onChange={(e) => setManualCropExtra(Number(e.target.value))}
+                      className="w-full accent-slate-800"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Reduz o retângulo do auto-recorte em cada lado para remover bordas residuais ou rebarbas.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-5 pt-6 border-t border-gray-100">
+                  <label className="block text-sm font-semibold text-gray-700 uppercase tracking-wider flex items-center gap-2">
+                    <Droplets size={16} /> Marca d&apos;água
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="w-5 h-5 accent-slate-800"
+                      checked={watermarkEnabled}
+                      onChange={(e) => setWatermarkEnabled(e.target.checked)}
+                    />
+                    <span className="text-sm font-bold text-gray-800">Exportar como marca d&apos;água</span>
+                  </label>
+
+                  {watermarkEnabled && (
+                    <div className="space-y-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Cor da arte</span>
+                      <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-lg">
+                        <button
+                          type="button"
+                          onClick={() => setWatermarkColorMode('white')}
+                          className={`text-xs font-semibold py-2 rounded-md transition-all ${watermarkColorMode === 'white' ? 'bg-white shadow-sm text-slate-800' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                          Tudo branco
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWatermarkColorMode('original')}
+                          className={`text-xs font-semibold py-2 rounded-md transition-all ${watermarkColorMode === 'original' ? 'bg-white shadow-sm text-slate-800' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                          Cores originais
+                        </button>
+                      </div>
+                      <div className="space-y-2 pt-1">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Opacidade</span>
+                          <span className="text-gray-400">{watermarkOpacityPercent}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={10}
+                          max={100}
+                          value={watermarkOpacityPercent}
+                          onChange={(e) => setWatermarkOpacityPercent(Number(e.target.value))}
+                          className="w-full accent-slate-800"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-6 border-t border-gray-100 space-y-4">
@@ -353,10 +433,20 @@ export default function App() {
                 <>
                   <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 text-sm font-medium text-gray-500 flex justify-between items-center">
                     <span>Resultado Final (PNG)</span>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap justify-end">
                       <div className="flex items-center gap-1 text-xs bg-white px-2 py-1 rounded border shadow-sm">
                         <Crop size={12} /> Auto-recorte
                       </div>
+                      {manualCropExtra > 0 && (
+                        <div className="flex items-center gap-1 text-xs bg-emerald-50 text-emerald-800 px-2 py-1 rounded border border-emerald-200 shadow-sm">
+                          <Crop size={12} /> −{manualCropExtra}px
+                        </div>
+                      )}
+                      {watermarkEnabled && (
+                        <div className="flex items-center gap-1 text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded border border-slate-200 shadow-sm">
+                          <Droplets size={12} /> {watermarkOpacityPercent}%
+                        </div>
+                      )}
                       {upscaleMultiplier > 1 && (
                         <div
                           className="flex items-center gap-1 text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200 shadow-sm"

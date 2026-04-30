@@ -3,6 +3,7 @@ import type {
   ImagePipelineParams,
   OutputFormat,
   Rgb,
+  WatermarkColorMode,
 } from '../types/imagePipeline';
 
 /**
@@ -107,6 +108,51 @@ export function computeContentBounds(
   return { minX, minY, maxX, maxY };
 }
 
+/**
+ * Applies manual crop inset: tightens the bounding box by moving edges inward (same inset per side).
+ */
+export function applyManualCropInset(
+  bounds: ContentBounds,
+  insetPx: number
+): ContentBounds | null {
+  if (insetPx <= 0) return bounds;
+  const rawW = bounds.maxX - bounds.minX;
+  const rawH = bounds.maxY - bounds.minY;
+  const maxInset = Math.min(
+    insetPx,
+    Math.floor(rawW / 2),
+    Math.floor(rawH / 2)
+  );
+  const minX = bounds.minX + maxInset;
+  const minY = bounds.minY + maxInset;
+  const maxX = bounds.maxX - maxInset;
+  const maxY = bounds.maxY - maxInset;
+  if (maxX <= minX || maxY <= minY) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+/**
+ * Watermark export: optionally forces RGB to white, then multiplies alpha by opacity factor on every pixel.
+ */
+export function applyWatermarkToImageData(
+  data: Uint8ClampedArray,
+  colorMode: WatermarkColorMode,
+  opacityPercent: number
+): void {
+  const clamped = Math.min(100, Math.max(10, opacityPercent));
+  const factor = clamped / 100;
+  for (let i = 0; i < data.length; i += 4) {
+    const a = data[i + 3];
+    if (a === 0) continue;
+    if (colorMode === 'white') {
+      data[i] = 255;
+      data[i + 1] = 255;
+      data[i + 2] = 255;
+    }
+    data[i + 3] = Math.round(a * factor);
+  }
+}
+
 function formatDimensions(
   format: OutputFormat
 ): { baseW: number; baseH: number; isFixed: boolean; maxPadding: number } {
@@ -155,11 +201,15 @@ export function processImageToPng(
 
   ctx.putImageData(imgData, 0, 0);
 
-  const bounds = computeContentBounds(data, canvas.width, canvas.height);
+  const boundsRaw = computeContentBounds(data, canvas.width, canvas.height);
+  if (!boundsRaw) return null;
+
+  const bounds = applyManualCropInset(boundsRaw, params.manualCropExtra);
   if (!bounds) return null;
 
   const cropW = bounds.maxX - bounds.minX;
   const cropH = bounds.maxY - bounds.minY;
+  if (cropW <= 0 || cropH <= 0) return null;
 
   const fmt = formatDimensions(params.selectedFormat);
   let baseTargetW = cropW + params.padding * 2;
@@ -220,6 +270,18 @@ export function processImageToPng(
       drawW,
       drawH
     );
+  }
+
+  if (params.watermarkEnabled) {
+    const outCtx = finalCanvas.getContext('2d');
+    if (!outCtx) return null;
+    const outData = outCtx.getImageData(0, 0, targetW, targetH);
+    applyWatermarkToImageData(
+      outData.data,
+      params.watermarkColorMode,
+      params.watermarkOpacityPercent
+    );
+    outCtx.putImageData(outData, 0, 0);
   }
 
   return finalCanvas.toDataURL('image/png');
