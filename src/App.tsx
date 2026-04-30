@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useImagePipeline } from './hooks/useImagePipeline';
 import { usePreparedCropPreview } from './hooks/usePreparedCropPreview';
+import { useDebouncedValue } from './hooks/useDebouncedValue';
 import { InteractiveCropEditor } from './components/InteractiveCropEditor';
 import type { ContentBounds, OutputFormat, WatermarkColorMode } from './types/imagePipeline';
 
@@ -22,6 +23,7 @@ export default function App() {
   const [tolerance, setTolerance] = useState(15);
   const [padding, setPadding] = useState(40);
   const [interactiveCropBounds, setInteractiveCropBounds] = useState<ContentBounds | null>(null);
+  const debouncedCropForExport = useDebouncedValue(interactiveCropBounds, 120);
 
   const [watermarkEnabled, setWatermarkEnabled] = useState(false);
   const [watermarkColorMode, setWatermarkColorMode] = useState<WatermarkColorMode>('white');
@@ -37,7 +39,7 @@ export default function App() {
   const { processedSrc, isProcessing } = useImagePipeline(imageSrc, {
     tolerance,
     padding,
-    interactiveCropBounds,
+    interactiveCropBounds: debouncedCropForExport,
     removeBackground,
     selectedFormat,
     upscaleMultiplier,
