@@ -1,22 +1,22 @@
 export type OutputFormat = 'custom' | 'relatorio' | 'site' | 'favicon';
 
-export type BgRemovalMethod = 'canvas' | 'removebg';
-
 export type WatermarkColorMode = 'white' | 'original';
 
 export interface ImagePipelineParams {
   tolerance: number;
   padding: number;
-  /** Shrinks the auto bounding box by up to this many pixels per edge (0–100). */
-  manualCropExtra: number;
   removeBackground: boolean;
   selectedFormat: OutputFormat;
   upscaleMultiplier: number;
-  bgRemovalMethod: BgRemovalMethod;
   watermarkEnabled: boolean;
   watermarkColorMode: WatermarkColorMode;
   /** 10–100; scales alpha of non-transparent pixels after optional white fill. */
   watermarkOpacityPercent: number;
+  /**
+   * When null, crop uses automatic content bounds. When set, this rectangle (image pixels, inclusive
+   * min/max indices) replaces the auto crop — must match the working canvas size after background removal.
+   */
+  interactiveCropBounds: ContentBounds | null;
 }
 
 export interface Rgb {
@@ -25,6 +25,7 @@ export interface Rgb {
   b: number;
 }
 
+/** Inclusive pixel indices on the working canvas (same convention as computeContentBounds). */
 export interface ContentBounds {
   minX: number;
   minY: number;

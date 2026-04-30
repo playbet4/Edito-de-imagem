@@ -1,38 +1,27 @@
-import React, { useState, useRef } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 import {
   Upload,
   Download,
   Image as ImageIcon,
   Maximize,
-  Sparkles,
-  Palette,
-  MessageSquare,
-  Loader2,
-  Quote,
   Crop,
   MonitorUp,
   Wand2,
-  KeyRound,
   Droplets,
+  Loader2,
 } from 'lucide-react';
 import { useImagePipeline } from './hooks/useImagePipeline';
-import { requestBrandKitFromGemini } from './lib/brandKitGemini';
-import type { OutputFormat, WatermarkColorMode } from './types/imagePipeline';
-import type { AiBrandData } from './types/brandKit';
+import { usePreparedCropPreview } from './hooks/usePreparedCropPreview';
+import { InteractiveCropEditor } from './components/InteractiveCropEditor';
+import type { ContentBounds, OutputFormat, WatermarkColorMode } from './types/imagePipeline';
 
 export default function App() {
-  const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
-
-  const [bgRemovalMethod, setBgRemovalMethod] = useState<'canvas' | 'removebg'>('canvas');
-  const [removeBgApiKey, setRemoveBgApiKey] = useState('');
-  const [isRemovingBgApi, setIsRemovingBgApi] = useState(false);
-  const [apiError, setApiError] = useState<string | null>(null);
 
   const [removeBackground, setRemoveBackground] = useState(true);
   const [tolerance, setTolerance] = useState(15);
   const [padding, setPadding] = useState(40);
-  const [manualCropExtra, setManualCropExtra] = useState(0);
+  const [interactiveCropBounds, setInteractiveCropBounds] = useState<ContentBounds | null>(null);
 
   const [watermarkEnabled, setWatermarkEnabled] = useState(false);
   const [watermarkColorMode, setWatermarkColorMode] = useState<WatermarkColorMode>('white');
@@ -41,24 +30,25 @@ export default function App() {
   const [selectedFormat, setSelectedFormat] = useState<OutputFormat>('custom');
   const [upscaleMultiplier, setUpscaleMultiplier] = useState(1);
 
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [aiBrandData, setAiBrandData] = useState<AiBrandData | null>(null);
-  const [aiError, setAiError] = useState<string | null>(null);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const cropPreview = usePreparedCropPreview(imageSrc, removeBackground, tolerance);
 
   const { processedSrc, isProcessing } = useImagePipeline(imageSrc, {
     tolerance,
     padding,
-    manualCropExtra,
+    interactiveCropBounds,
     removeBackground,
     selectedFormat,
     upscaleMultiplier,
-    bgRemovalMethod,
     watermarkEnabled,
     watermarkColorMode,
     watermarkOpacityPercent,
   });
+
+  const handleCropChange = useCallback((bounds: ContentBounds | null) => {
+    setInteractiveCropBounds(bounds);
+  }, []);
 
   const checkeredStyle: React.CSSProperties = {
     backgroundColor: '#f9fafb',
@@ -76,65 +66,11 @@ export default function App() {
       const reader = new FileReader();
       reader.onload = (event) => {
         const result = event.target?.result as string;
-        setOriginalImageSrc(result);
         setImageSrc(result);
-        setAiBrandData(null);
-        setAiError(null);
-        setApiError(null);
+        setInteractiveCropBounds(null);
       };
       reader.readAsDataURL(file);
     }
-  };
-
-  const handleRemoveBgApiCall = async () => {
-    if (!originalImageSrc || !removeBgApiKey) {
-      setApiError('Insira sua API Key do Remove.bg primeiro.');
-      return;
-    }
-
-    setIsRemovingBgApi(true);
-    setApiError(null);
-
-    /**
-     * Security: any API key used from the browser can be copied from the client bundle, DevTools, or
-     * network traffic. For production, call Remove.bg from your own backend and keep the key server-side.
-     */
-    try {
-      const base64Data = originalImageSrc.split(',')[1];
-
-      const response = await fetch('https://api.remove.bg/v1.0/removebg', {
-        method: 'POST',
-        headers: {
-          'X-Api-Key': removeBgApiKey,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          image_file_b64: base64Data,
-          size: 'auto',
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Erro API: ${response.status} - Verifique sua chave.`);
-      }
-
-      const data = await response.json();
-      const transparentImageBase64 = `data:image/png;base64,${data.data.result_b64}`;
-
-      setImageSrc(transparentImageBase64);
-      setBgRemovalMethod('canvas');
-      setRemoveBackground(false);
-    } catch (err) {
-      setApiError(err instanceof Error ? err.message : 'Erro desconhecido');
-    } finally {
-      setIsRemovingBgApi(false);
-    }
-  };
-
-  const resetImage = () => {
-    setImageSrc(originalImageSrc);
-    setRemoveBackground(true);
   };
 
   const handleDownload = () => {
@@ -154,178 +90,119 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  const generateBrandKit = async () => {
-    if (!processedSrc) return;
-    setIsAiLoading(true);
-    setAiBrandData(null);
-    setAiError(null);
-    const result = await requestBrandKitFromGemini(processedSrc);
-    if (result.ok) {
-      setAiBrandData(result.data);
-    } else {
-      setAiError(result.userMessage);
-    }
-    setIsAiLoading(false);
-  };
+  const cropReady =
+    cropPreview &&
+    cropPreview.dataUrl &&
+    cropPreview.autoBounds &&
+    cropPreview.width > 0;
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6 font-sans text-gray-800">
-      <div className="max-w-6xl mx-auto space-y-8">
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Processador de Logo Imobiliário</h1>
-          <p className="text-gray-500 max-w-2xl mx-auto">
-            Remova fundos, centralize, escolha formatos fixos e amplie a saída com redimensionamento de alta
-            qualidade no navegador (suavização do canvas — não é modelo de IA de upscaling).
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100/80 text-gray-800">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-10">
+        <header className="text-center space-y-3 max-w-2xl mx-auto">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Imobiliário</p>
+          <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
+            Processador de logo
+          </h1>
+          <p className="text-slate-600 text-sm sm:text-base leading-relaxed">
+            Remova fundo no navegador, defina o recorte direto na imagem, escolha formatos de exportação e marca
+            d&apos;água — tudo em um fluxo só.
           </p>
-        </div>
+        </header>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <div className="lg:col-span-4 space-y-6">
-            <div className="space-y-4">
-              <label className="block text-sm font-semibold text-gray-700 uppercase tracking-wider">Passo 1: Upload</label>
+        <div className="bg-white/90 backdrop-blur rounded-2xl shadow-lg shadow-slate-200/60 border border-slate-200/80 p-6 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10">
+          <aside className="lg:col-span-4 space-y-8">
+            <section className="space-y-4">
+              <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">1. Imagem</h2>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 text-white py-3 px-4 rounded-xl transition-colors font-medium"
+                className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-950 text-white py-3.5 px-4 rounded-xl transition-colors font-medium shadow-md shadow-slate-900/15"
               >
-                <Upload size={20} /> Escolher Imagem
+                <Upload size={20} /> Escolher imagem
               </button>
               <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
-            </div>
+            </section>
 
             {imageSrc && (
               <>
-                <div className="space-y-5 pt-6 border-t border-gray-100">
-                  <label className="block text-sm font-semibold text-gray-700 uppercase tracking-wider flex items-center gap-2">
-                    <Wand2 size={16} /> Remoção de Fundo
-                  </label>
-
-                  <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-lg">
-                    <button
-                      type="button"
-                      onClick={() => setBgRemovalMethod('canvas')}
-                      className={`text-xs font-semibold py-2 rounded-md transition-all ${bgRemovalMethod === 'canvas' ? 'bg-white shadow-sm text-slate-800' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                      Canvas (Local)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBgRemovalMethod('removebg')}
-                      className={`text-xs font-semibold py-2 rounded-md transition-all ${bgRemovalMethod === 'removebg' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                      Remove.bg API
-                    </button>
-                  </div>
-
-                  {bgRemovalMethod === 'canvas' ? (
-                    <div className="space-y-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          className="w-5 h-5 accent-slate-800"
-                          checked={removeBackground}
-                          onChange={(e) => setRemoveBackground(e.target.checked)}
-                        />
-                        <span className="text-sm font-bold text-gray-800">Remoção Automática</span>
-                      </label>
-
-                      {removeBackground && (
-                        <div className="space-y-2 pt-2">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-600">Tolerância de Cor</span>
-                            <span className="text-gray-400">{tolerance}</span>
-                          </div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={150}
-                            value={tolerance}
-                            onChange={(e) => setTolerance(Number(e.target.value))}
-                            className="w-full accent-slate-800"
-                          />
-                          <p className="text-xs text-gray-500 leading-tight">
-                            A cor de fundo é estimada pelas bordas e cantos da imagem (mediana por canal) e os
-                            pixels próximos são tornados transparentes. Ajuste a régua se sobrar halo ou se apagar
-                            partes do logo.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-3 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
-                      <div className="flex items-center gap-2 text-sm text-blue-800 font-medium mb-1">
-                        <KeyRound size={16} /> Chave da API (Opcional)
-                      </div>
+                <section className="space-y-4 pt-2 border-t border-slate-100">
+                  <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                    <Wand2 size={14} className="text-slate-600" /> Fundo
+                  </h2>
+                  <div className="space-y-4 bg-slate-50 p-4 rounded-xl border border-slate-200/80">
+                    <label className="flex items-center gap-3 cursor-pointer">
                       <input
-                        type="text"
-                        placeholder="Ex: aB3cD4eF5..."
-                        value={removeBgApiKey}
-                        onChange={(e) => setRemoveBgApiKey(e.target.value)}
-                        className="w-full text-sm p-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        type="checkbox"
+                        className="w-5 h-5 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                        checked={removeBackground}
+                        onChange={(e) => setRemoveBackground(e.target.checked)}
                       />
-                      <button
-                        type="button"
-                        onClick={handleRemoveBgApiCall}
-                        disabled={isRemovingBgApi || !removeBgApiKey}
-                        className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-sm font-medium py-2 rounded-lg transition-colors flex justify-center items-center gap-2"
-                      >
-                        {isRemovingBgApi ? <Loader2 size={16} className="animate-spin" /> : 'Processar com Inteligência'}
-                      </button>
-                      {apiError && <p className="text-xs text-red-600 mt-1">{apiError}</p>}
-                      <button type="button" onClick={resetImage} className="w-full text-xs text-blue-600 underline">
-                        Voltar Imagem Original
-                      </button>
-                    </div>
-                  )}
-                </div>
+                      <span className="text-sm font-semibold text-slate-800">Remover fundo (cor da borda)</span>
+                    </label>
+                    {removeBackground && (
+                      <div className="space-y-2 pt-1">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-slate-600">Tolerância</span>
+                          <span className="text-slate-400 tabular-nums">{tolerance}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={150}
+                          value={tolerance}
+                          onChange={(e) => setTolerance(Number(e.target.value))}
+                          className="w-full accent-slate-900"
+                        />
+                        <p className="text-xs text-slate-500 leading-relaxed">
+                          Ajuste se sobrar halo claro ou se o logo perder partes finas.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </section>
 
-                <div className="space-y-5 pt-6 border-t border-gray-100">
-                  <label className="block text-sm font-semibold text-gray-700 uppercase tracking-wider flex items-center gap-2">
-                    <Crop size={16} /> Formato e Saída
-                  </label>
-
-                  <div className="space-y-2">
-                    <span className="text-sm font-medium text-gray-600 block">Tamanho Final:</span>
+                <section className="space-y-4 pt-2 border-t border-slate-100">
+                  <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                    <Crop size={14} className="text-slate-600" /> Saída
+                  </h2>
+                  <div className="space-y-3">
+                    <label className="text-sm font-medium text-slate-700">Formato</label>
                     <select
                       value={selectedFormat}
                       onChange={(e) => setSelectedFormat(e.target.value as OutputFormat)}
-                      className="w-full p-2.5 border border-gray-200 rounded-lg text-sm outline-none"
+                      className="w-full p-3 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-slate-900/15 outline-none"
                     >
-                      <option value="custom">Livre / Ajuste Automático</option>
-                      <option value="relatorio">Relatório (200x80)</option>
-                      <option value="site">LOGO SITE (500x500)</option>
-                      <option value="favicon">Favicon (30x30)</option>
+                      <option value="custom">Livre / automático</option>
+                      <option value="relatorio">Relatório (200×80)</option>
+                      <option value="site">Site (500×500)</option>
+                      <option value="favicon">Favicon (30×30)</option>
                     </select>
                   </div>
 
                   <div className="space-y-2">
                     <span
-                      className="text-sm font-medium text-gray-600 flex items-center gap-2"
-                      title="Multiplica largura e altura no canvas com interpolação de alta qualidade (não é upscaling por IA)."
+                      className="text-sm font-medium text-slate-700 flex items-center gap-2"
+                      title="Interpolação do canvas, não IA."
                     >
-                      <MonitorUp size={14} /> Escala de saída (canvas):
+                      <MonitorUp size={14} /> Escala
                     </span>
                     <select
-                      title="Redimensiona o resultado final no canvas com suavização. Não usa modelo de super-resolução."
                       value={upscaleMultiplier}
                       onChange={(e) => setUpscaleMultiplier(Number(e.target.value))}
-                      className="w-full p-2.5 border border-gray-200 rounded-lg text-sm outline-none"
+                      className="w-full p-3 border border-slate-200 rounded-xl text-sm bg-white"
                     >
-                      <option value={1}>1× — tamanho base</option>
-                      <option value={2}>2× — arquivo maior, bordas mais suaves</option>
-                      <option value={4}>4× — arquivo grande (interpolação)</option>
+                      <option value={1}>1×</option>
+                      <option value={2}>2×</option>
+                      <option value={4}>4×</option>
                     </select>
-                    <p className="text-xs text-gray-500">
-                      Aumenta pixels via canvas do navegador (suavização), útil para logos pequenos — não é o mesmo
-                      que ferramentas de super-resolução com IA.
-                    </p>
                   </div>
 
                   {selectedFormat !== 'favicon' && (
-                    <div className="space-y-2 pt-2">
+                    <div className="space-y-2">
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Margem (Respiro)</span>
-                        <span className="text-gray-400">{padding}px</span>
+                        <span className="text-slate-600">Margem</span>
+                        <span className="text-slate-400 tabular-nums">{padding}px</span>
                       </div>
                       <input
                         type="range"
@@ -333,67 +210,47 @@ export default function App() {
                         max={150}
                         value={padding}
                         onChange={(e) => setPadding(Number(e.target.value))}
-                        className="w-full accent-slate-800"
+                        className="w-full accent-slate-900"
                       />
                     </div>
                   )}
+                </section>
 
-                  <div className="space-y-2 pt-2 border-t border-gray-100 mt-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Corte manual extra</span>
-                      <span className="text-gray-400">{manualCropExtra}px</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={manualCropExtra}
-                      onChange={(e) => setManualCropExtra(Number(e.target.value))}
-                      className="w-full accent-slate-800"
-                    />
-                    <p className="text-xs text-gray-500">
-                      Reduz o retângulo do auto-recorte em cada lado para remover bordas residuais ou rebarbas.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-5 pt-6 border-t border-gray-100">
-                  <label className="block text-sm font-semibold text-gray-700 uppercase tracking-wider flex items-center gap-2">
-                    <Droplets size={16} /> Marca d&apos;água
-                  </label>
+                <section className="space-y-4 pt-2 border-t border-slate-100">
+                  <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                    <Droplets size={14} className="text-slate-600" /> Marca d&apos;água
+                  </h2>
                   <label className="flex items-center gap-3 cursor-pointer">
                     <input
                       type="checkbox"
-                      className="w-5 h-5 accent-slate-800"
+                      className="w-5 h-5 rounded border-slate-300 text-slate-900"
                       checked={watermarkEnabled}
                       onChange={(e) => setWatermarkEnabled(e.target.checked)}
                     />
-                    <span className="text-sm font-bold text-gray-800">Exportar como marca d&apos;água</span>
+                    <span className="text-sm font-semibold text-slate-800">Exportar como marca d&apos;água</span>
                   </label>
-
                   {watermarkEnabled && (
-                    <div className="space-y-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Cor da arte</span>
-                      <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-lg">
+                    <div className="space-y-4 bg-slate-50 p-4 rounded-xl border border-slate-200/80">
+                      <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100/80 rounded-lg">
                         <button
                           type="button"
                           onClick={() => setWatermarkColorMode('white')}
-                          className={`text-xs font-semibold py-2 rounded-md transition-all ${watermarkColorMode === 'white' ? 'bg-white shadow-sm text-slate-800' : 'text-gray-500 hover:text-gray-700'}`}
+                          className={`text-xs font-semibold py-2.5 rounded-md transition-all ${watermarkColorMode === 'white' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
                         >
                           Tudo branco
                         </button>
                         <button
                           type="button"
                           onClick={() => setWatermarkColorMode('original')}
-                          className={`text-xs font-semibold py-2 rounded-md transition-all ${watermarkColorMode === 'original' ? 'bg-white shadow-sm text-slate-800' : 'text-gray-500 hover:text-gray-700'}`}
+                          className={`text-xs font-semibold py-2.5 rounded-md transition-all ${watermarkColorMode === 'original' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
                         >
                           Cores originais
                         </button>
                       </div>
-                      <div className="space-y-2 pt-1">
+                      <div className="space-y-2">
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Opacidade</span>
-                          <span className="text-gray-400">{watermarkOpacityPercent}%</span>
+                          <span className="text-slate-600">Opacidade</span>
+                          <span className="text-slate-400 tabular-nums">{watermarkOpacityPercent}%</span>
                         </div>
                         <input
                           type="range"
@@ -401,145 +258,103 @@ export default function App() {
                           max={100}
                           value={watermarkOpacityPercent}
                           onChange={(e) => setWatermarkOpacityPercent(Number(e.target.value))}
-                          className="w-full accent-slate-800"
+                          className="w-full accent-slate-900"
                         />
                       </div>
                     </div>
                   )}
-                </div>
+                </section>
 
-                <div className="pt-6 border-t border-gray-100 space-y-4">
+                <div className="pt-2 border-t border-slate-100">
                   <button
                     type="button"
                     onClick={handleDownload}
                     disabled={!processedSrc || isProcessing}
-                    className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white py-3 px-4 rounded-xl transition-colors font-medium"
+                    className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300/80 text-white py-3.5 px-4 rounded-xl font-semibold shadow-md shadow-emerald-900/10 transition-colors"
                   >
-                    <Download size={20} /> Exportar {selectedFormat !== 'custom' && `(${selectedFormat})`}
+                    <Download size={20} /> Exportar PNG
                   </button>
                 </div>
               </>
             )}
-          </div>
+          </aside>
 
-          <div className="lg:col-span-8 flex flex-col gap-6">
-            <div className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden flex flex-col h-[500px]">
-              {!imageSrc ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-12">
-                  <ImageIcon size={48} className="mb-4 opacity-50" />
-                  <p>Faça upload para ver o preview.</p>
-                </div>
-              ) : (
-                <>
-                  <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 text-sm font-medium text-gray-500 flex justify-between items-center">
-                    <span>Resultado Final (PNG)</span>
+          <div className="lg:col-span-8 flex flex-col gap-8">
+            {!imageSrc ? (
+              <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 min-h-[280px] flex flex-col items-center justify-center text-slate-400 p-8">
+                <ImageIcon size={52} className="mb-3 opacity-40" strokeWidth={1.25} />
+                <p className="text-sm font-medium text-slate-500">Envie uma imagem para começar</p>
+                <p className="text-xs text-slate-400 mt-1 text-center max-w-xs">
+                  PNG ou JPG com fundo sólido costuma dar melhor resultado na remoção automática.
+                </p>
+              </div>
+            ) : (
+              <>
+                {cropReady && cropPreview && cropPreview.autoBounds && (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm">
+                    <InteractiveCropEditor
+                      imageSrc={cropPreview.dataUrl}
+                      naturalWidth={cropPreview.width}
+                      naturalHeight={cropPreview.height}
+                      autoBounds={cropPreview.autoBounds}
+                      cropBounds={interactiveCropBounds}
+                      onCropChange={handleCropChange}
+                      disabled={isProcessing}
+                    />
+                  </div>
+                )}
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 overflow-hidden flex flex-col min-h-[280px] shadow-inner">
+                  <div className="bg-white/90 px-4 py-3 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-slate-700">Prévia final</span>
                     <div className="flex gap-2 flex-wrap justify-end">
-                      <div className="flex items-center gap-1 text-xs bg-white px-2 py-1 rounded border shadow-sm">
-                        <Crop size={12} /> Auto-recorte
-                      </div>
-                      {manualCropExtra > 0 && (
-                        <div className="flex items-center gap-1 text-xs bg-emerald-50 text-emerald-800 px-2 py-1 rounded border border-emerald-200 shadow-sm">
-                          <Crop size={12} /> −{manualCropExtra}px
-                        </div>
+                      {interactiveCropBounds !== null && (
+                        <span className="text-xs font-medium bg-emerald-50 text-emerald-900 px-2.5 py-1 rounded-md border border-emerald-200/80">
+                          Recorte manual
+                        </span>
                       )}
                       {watermarkEnabled && (
-                        <div className="flex items-center gap-1 text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded border border-slate-200 shadow-sm">
-                          <Droplets size={12} /> {watermarkOpacityPercent}%
-                        </div>
+                        <span className="text-xs font-medium bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md border border-slate-200">
+                          Marca d&apos;água {watermarkOpacityPercent}%
+                        </span>
                       )}
                       {upscaleMultiplier > 1 && (
-                        <div
-                          className="flex items-center gap-1 text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200 shadow-sm"
-                          title="Escala via canvas, não IA"
-                        >
-                          <MonitorUp size={12} /> {upscaleMultiplier}× escala
-                        </div>
+                        <span className="text-xs font-medium bg-sky-50 text-sky-800 px-2.5 py-1 rounded-md border border-sky-200">
+                          {upscaleMultiplier}× escala
+                        </span>
                       )}
                     </div>
                   </div>
-                  <div className="flex-1 flex items-center justify-center p-8 overflow-auto" style={checkeredStyle}>
+                  <div className="flex-1 flex items-center justify-center p-6 min-h-[240px]" style={checkeredStyle}>
                     {isProcessing && (
-                      <div className="flex flex-col items-center gap-3 text-gray-400">
+                      <div className="flex flex-col items-center gap-3 text-slate-400">
                         <Loader2 size={32} className="animate-spin" />
-                        <span className="text-sm">Processando...</span>
+                        <span className="text-sm font-medium">Processando…</span>
                       </div>
                     )}
                     {!isProcessing && processedSrc && (
-                      <img src={processedSrc} alt="Logo" className="max-w-full max-h-full object-contain drop-shadow-md" />
+                      <img
+                        src={processedSrc}
+                        alt="Resultado"
+                        className="max-w-full max-h-[min(420px,50vh)] object-contain drop-shadow-lg rounded-lg"
+                      />
                     )}
                     {!isProcessing && !processedSrc && (
-                      <div className="flex flex-col items-center gap-3 text-gray-400">
-                        <Maximize size={32} className="opacity-50" />
-                        <span className="text-sm">Nenhum pixel visível detectado.</span>
+                      <div className="flex flex-col items-center gap-2 text-slate-400">
+                        <Maximize size={28} className="opacity-50" />
+                        <span className="text-sm">Nada visível para exportar</span>
                       </div>
                     )}
                   </div>
-                </>
-              )}
-            </div>
-
-            {imageSrc && (
-              <div className="flex flex-col items-center mt-4 gap-2">
-                <button
-                  type="button"
-                  onClick={generateBrandKit}
-                  disabled={!processedSrc || isAiLoading}
-                  className="flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 disabled:opacity-50 text-white py-3 px-6 rounded-full shadow-md font-medium hover:scale-105 transition-transform"
-                >
-                  {isAiLoading ? <Loader2 size={20} className="animate-spin" /> : <><Sparkles size={20} /> Analisar Marca com IA</>}
-                </button>
-                {aiError && <p className="text-sm text-red-600 text-center max-w-lg">{aiError}</p>}
-              </div>
-            )}
-
-            {aiBrandData && (
-              <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100 rounded-xl p-6 md:p-8 mt-4">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2 bg-amber-100 rounded-lg text-amber-600">
-                    <Sparkles size={24} />
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900">Kit de Marca</h3>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-4">
-                    <h4 className="font-semibold text-gray-800 flex items-center gap-2">
-                      <MessageSquare size={18} className="text-amber-500" /> Slogans Sugeridos
-                    </h4>
-                    <ul className="space-y-3">
-                      {aiBrandData.slogans?.map((s, idx) => (
-                        <li key={idx} className="bg-white px-4 py-3 rounded-lg border border-amber-100 shadow-sm text-gray-700 italic">
-                          &ldquo;{s}&rdquo;
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="space-y-4">
-                    <h4 className="font-semibold text-gray-800 flex items-center gap-2">
-                      <Quote size={18} className="text-amber-500" /> &ldquo;Sobre Nós&rdquo;
-                    </h4>
-                    <div className="bg-white p-5 rounded-lg border border-amber-100 shadow-sm text-gray-600 leading-relaxed text-sm">{aiBrandData.aboutUs}</div>
-                  </div>
-                  <div className="md:col-span-2 space-y-4 pt-4 border-t border-amber-200/50">
-                    <h4 className="font-semibold text-gray-800 flex items-center gap-2">
-                      <Palette size={18} className="text-amber-500" /> Paleta Web
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      {aiBrandData.colors?.map((c, idx) => (
-                        <div key={idx} className="flex flex-col bg-white rounded-lg border border-amber-100 shadow-sm overflow-hidden">
-                          <div className="h-20 w-full" style={{ backgroundColor: c.hex }} />
-                          <div className="p-4">
-                            <span className="font-mono font-bold text-gray-900 block mb-1">{c.hex}</span>
-                            <span className="text-xs text-gray-500">{c.reason}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
+              </>
             )}
           </div>
         </div>
+
+        <footer className="text-center text-xs text-slate-400 pb-4">
+          Processamento local no navegador — sua imagem não é enviada a servidores de edição.
+        </footer>
       </div>
     </div>
   );

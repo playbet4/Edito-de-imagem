@@ -2,30 +2,25 @@ import type {
   ContentBounds,
   ImagePipelineParams,
   OutputFormat,
-  Rgb,
   WatermarkColorMode,
 } from '../types/imagePipeline';
 
 /**
  * Euclidean distance in RGB space between two opaque colors.
  */
-export function colorDistance(a: Rgb, b: Rgb): number {
-  return Math.sqrt(
-    (a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2
-  );
+export function colorDistance(a: { r: number; g: number; b: number }, b: { r: number; g: number; b: number }): number {
+  return Math.sqrt((a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2);
 }
 
 /**
  * Estimates a representative "background" RGB by sampling the image border (corners + edge stride).
- * Uses per-channel median across samples: robust when one corner differs (e.g. logo touches a corner)
- * while most of the border shows the true backdrop color.
  */
 export function deriveBackgroundColorFromBorderSamples(
   data: Uint8ClampedArray,
   width: number,
   height: number
-): Rgb {
-  const samples: Rgb[] = [];
+): { r: number; g: number; b: number } {
+  const samples: { r: number; g: number; b: number }[] = [];
 
   const pushPixel = (x: number, y: number) => {
     const i = (y * width + x) * 4;
@@ -59,12 +54,9 @@ export function deriveBackgroundColorFromBorderSamples(
   };
 }
 
-/**
- * Marks pixels within `tolerance` distance of `bg` as fully transparent (when removal is enabled).
- */
 export function removeBackgroundByColorDistance(
   data: Uint8ClampedArray,
-  bg: Rgb,
+  bg: { r: number; g: number; b: number },
   tolerance: number
 ): void {
   for (let i = 0; i < data.length; i += 4) {
@@ -78,9 +70,6 @@ export function removeBackgroundByColorDistance(
   }
 }
 
-/**
- * Tight axis-aligned bounds of pixels with alpha > 0.
- */
 export function computeContentBounds(
   data: Uint8ClampedArray,
   width: number,
@@ -109,31 +98,79 @@ export function computeContentBounds(
 }
 
 /**
- * Applies manual crop inset: tightens the bounding box by moving edges inward (same inset per side).
+ * Clamps inclusive crop bounds to image pixels [0, w-1] x [0, h-1] and enforces a minimal size.
  */
-export function applyManualCropInset(
-  bounds: ContentBounds,
-  insetPx: number
-): ContentBounds | null {
-  if (insetPx <= 0) return bounds;
-  const rawW = bounds.maxX - bounds.minX;
-  const rawH = bounds.maxY - bounds.minY;
-  const maxInset = Math.min(
-    insetPx,
-    Math.floor(rawW / 2),
-    Math.floor(rawH / 2)
-  );
-  const minX = bounds.minX + maxInset;
-  const minY = bounds.minY + maxInset;
-  const maxX = bounds.maxX - maxInset;
-  const maxY = bounds.maxY - maxInset;
-  if (maxX <= minX || maxY <= minY) return null;
+export function clampCropBounds(bounds: ContentBounds, width: number, height: number): ContentBounds {
+  const maxXI = width - 1;
+  const maxYI = height - 1;
+  let minX = Math.round(Math.min(bounds.minX, bounds.maxX));
+  let maxX = Math.round(Math.max(bounds.minX, bounds.maxX));
+  let minY = Math.round(Math.min(bounds.minY, bounds.maxY));
+  let maxY = Math.round(Math.max(bounds.minY, bounds.maxY));
+
+  minX = Math.max(0, Math.min(minX, maxXI));
+  maxX = Math.max(0, Math.min(maxX, maxXI));
+  minY = Math.max(0, Math.min(minY, maxYI));
+  maxY = Math.max(0, Math.min(maxY, maxYI));
+
+  if (maxX < minX) [minX, maxX] = [maxX, minX];
+  if (maxY < minY) [minY, maxY] = [maxY, minY];
+
+  if (maxX - minX < 1) {
+    const cx = Math.min(minX, maxXI - 1);
+    minX = cx;
+    maxX = cx + 1;
+  }
+  if (maxY - minY < 1) {
+    const cy = Math.min(minY, maxYI - 1);
+    minY = cy;
+    maxY = cy + 1;
+  }
+
   return { minX, minY, maxX, maxY };
 }
 
+export interface WorkingCanvasResult {
+  canvas: HTMLCanvasElement;
+  autoBounds: ContentBounds | null;
+}
+
 /**
- * Watermark export: optionally forces RGB to white, then multiplies alpha by opacity factor on every pixel.
+ * Loads image onto a canvas and optionally removes background — shared by export pipeline and crop preview.
  */
+export function buildWorkingCanvas(
+  img: HTMLImageElement,
+  removeBackground: boolean,
+  tolerance: number
+): WorkingCanvasResult {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return { canvas, autoBounds: null };
+  }
+
+  canvas.width = img.width;
+  canvas.height = img.height;
+  ctx.drawImage(img, 0, 0);
+
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imgData.data;
+
+  if (removeBackground) {
+    const bg = deriveBackgroundColorFromBorderSamples(data, canvas.width, canvas.height);
+    removeBackgroundByColorDistance(data, bg, tolerance);
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+
+  const autoBounds = computeContentBounds(data, canvas.width, canvas.height);
+  return { canvas, autoBounds };
+}
+
+export function workingCanvasToPngDataUrl(canvas: HTMLCanvasElement): string {
+  return canvas.toDataURL('image/png');
+}
+
 export function applyWatermarkToImageData(
   data: Uint8ClampedArray,
   colorMode: WatermarkColorMode,
@@ -168,47 +205,36 @@ function formatDimensions(
   }
 }
 
-/**
- * Full canvas pipeline: optional chroma-style removal, crop to content, pad, optional fixed canvas sizes,
- * scale by upscaleMultiplier with high-quality smoothing (browser interpolation, not ML upscaling).
- */
-export function processImageToPng(
-  img: HTMLImageElement,
-  params: ImagePipelineParams
-): string | null {
-  const canvas = document.createElement('canvas');
+function cropSizeInclusive(bounds: ContentBounds): { cropW: number; cropH: number } {
+  return {
+    cropW: bounds.maxX - bounds.minX + 1,
+    cropH: bounds.maxY - bounds.minY + 1,
+  };
+}
+
+export function processImageToPng(img: HTMLImageElement, params: ImagePipelineParams): string | null {
+  const { canvas, autoBounds } = buildWorkingCanvas(
+    img,
+    params.removeBackground,
+    params.tolerance
+  );
+
+  if (!autoBounds) return null;
+
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
 
-  canvas.width = img.width;
-  canvas.height = img.height;
-  ctx.drawImage(img, 0, 0);
+  const w = canvas.width;
+  const h = canvas.height;
 
-  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imgData.data;
-
-  const shouldRemoveLocal =
-    params.removeBackground && params.bgRemovalMethod === 'canvas';
-
-  if (shouldRemoveLocal) {
-    const bg = deriveBackgroundColorFromBorderSamples(
-      data,
-      canvas.width,
-      canvas.height
-    );
-    removeBackgroundByColorDistance(data, bg, params.tolerance);
+  let bounds: ContentBounds;
+  if (params.interactiveCropBounds) {
+    bounds = clampCropBounds(params.interactiveCropBounds, w, h);
+  } else {
+    bounds = autoBounds;
   }
 
-  ctx.putImageData(imgData, 0, 0);
-
-  const boundsRaw = computeContentBounds(data, canvas.width, canvas.height);
-  if (!boundsRaw) return null;
-
-  const bounds = applyManualCropInset(boundsRaw, params.manualCropExtra);
-  if (!bounds) return null;
-
-  const cropW = bounds.maxX - bounds.minX;
-  const cropH = bounds.maxY - bounds.minY;
+  const { cropW, cropH } = cropSizeInclusive(bounds);
   if (cropW <= 0 || cropH <= 0) return null;
 
   const fmt = formatDimensions(params.selectedFormat);
@@ -244,43 +270,19 @@ export function processImageToPng(
     const drawH = cropH * scale;
     const drawX = (targetW - drawW) / 2;
     const drawY = (targetH - drawH) / 2;
-    finalCtx.drawImage(
-      canvas,
-      bounds.minX,
-      bounds.minY,
-      cropW,
-      cropH,
-      drawX,
-      drawY,
-      drawW,
-      drawH
-    );
+    finalCtx.drawImage(canvas, bounds.minX, bounds.minY, cropW, cropH, drawX, drawY, drawW, drawH);
   } else {
     const drawW = cropW * u;
     const drawH = cropH * u;
     const p = params.padding * u;
-    finalCtx.drawImage(
-      canvas,
-      bounds.minX,
-      bounds.minY,
-      cropW,
-      cropH,
-      p,
-      p,
-      drawW,
-      drawH
-    );
+    finalCtx.drawImage(canvas, bounds.minX, bounds.minY, cropW, cropH, p, p, drawW, drawH);
   }
 
   if (params.watermarkEnabled) {
     const outCtx = finalCanvas.getContext('2d');
     if (!outCtx) return null;
     const outData = outCtx.getImageData(0, 0, targetW, targetH);
-    applyWatermarkToImageData(
-      outData.data,
-      params.watermarkColorMode,
-      params.watermarkOpacityPercent
-    );
+    applyWatermarkToImageData(outData.data, params.watermarkColorMode, params.watermarkOpacityPercent);
     outCtx.putImageData(outData, 0, 0);
   }
 

@@ -1,29 +1,22 @@
 import { useEffect, useState } from 'react';
 import { processImageToPng } from '../lib/imagePipeline';
 import type {
-  BgRemovalMethod,
+  ContentBounds,
   ImagePipelineParams,
   OutputFormat,
   WatermarkColorMode,
 } from '../types/imagePipeline';
 import { useDebouncedValue } from './useDebouncedValue';
 
-/**
- * Runs the canvas pipeline when `imageSrc` or pipeline settings change.
- * Tolerance and padding are debounced (~200ms) to avoid reprocessing on every slider tick.
- * Pixel loops stay on the main thread; debouncing limits churn. A Web Worker would require
- * transferring ImageData for large assets — left as a future optimization.
- */
 export function useImagePipeline(
   imageSrc: string | null,
   options: {
     tolerance: number;
     padding: number;
-    manualCropExtra: number;
+    interactiveCropBounds: ContentBounds | null;
     removeBackground: boolean;
     selectedFormat: OutputFormat;
     upscaleMultiplier: number;
-    bgRemovalMethod: BgRemovalMethod;
     watermarkEnabled: boolean;
     watermarkColorMode: WatermarkColorMode;
     watermarkOpacityPercent: number;
@@ -31,20 +24,24 @@ export function useImagePipeline(
 ): { processedSrc: string | null; isProcessing: boolean } {
   const debouncedTolerance = useDebouncedValue(options.tolerance, 200);
   const debouncedPadding = useDebouncedValue(options.padding, 200);
-  const debouncedManualCropExtra = useDebouncedValue(options.manualCropExtra, 200);
 
   const [processedSrc, setProcessedSrc] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const {
+    interactiveCropBounds,
     removeBackground,
     selectedFormat,
     upscaleMultiplier,
-    bgRemovalMethod,
     watermarkEnabled,
     watermarkColorMode,
     watermarkOpacityPercent,
   } = options;
+
+  const cropKey =
+    interactiveCropBounds === null
+      ? 'auto'
+      : `${interactiveCropBounds.minX},${interactiveCropBounds.minY},${interactiveCropBounds.maxX},${interactiveCropBounds.maxY}`;
 
   useEffect(() => {
     if (!imageSrc) {
@@ -60,14 +57,13 @@ export function useImagePipeline(
       const merged: ImagePipelineParams = {
         tolerance: debouncedTolerance,
         padding: debouncedPadding,
-        manualCropExtra: debouncedManualCropExtra,
         removeBackground,
         selectedFormat,
         upscaleMultiplier,
-        bgRemovalMethod,
         watermarkEnabled,
         watermarkColorMode,
         watermarkOpacityPercent,
+        interactiveCropBounds,
       };
       const out = processImageToPng(img, merged);
       setProcessedSrc(out);
@@ -80,15 +76,15 @@ export function useImagePipeline(
     };
 
     img.src = imageSrc;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cropKey encodes interactiveCropBounds
   }, [
     imageSrc,
     debouncedTolerance,
     debouncedPadding,
-    debouncedManualCropExtra,
+    cropKey,
     removeBackground,
     selectedFormat,
     upscaleMultiplier,
-    bgRemovalMethod,
     watermarkEnabled,
     watermarkColorMode,
     watermarkOpacityPercent,
