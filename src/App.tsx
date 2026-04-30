@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
   Upload,
   Download,
@@ -26,6 +26,64 @@ function scrollToId(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+const IMAGE_MIME_PREFIX = 'image/';
+
+function isImageMimeType(type: string): boolean {
+  return type.startsWith(IMAGE_MIME_PREFIX);
+}
+
+/**
+ * Skip hijacking paste when the user is typing in a text field (allow normal paste of text).
+ */
+function isEditablePasteTarget(target: EventTarget | null): boolean {
+  if (!target || !(target instanceof HTMLElement)) return false;
+  const el = target;
+  const tag = el.tagName;
+  if (tag === 'TEXTAREA') return true;
+  if (tag === 'SELECT') return true;
+  if (el.isContentEditable) return true;
+  if (el.closest('[contenteditable="true"]')) return true;
+  if (tag === 'INPUT') {
+    const input = el as HTMLInputElement;
+    const t = input.type.toLowerCase();
+    if (
+      t === 'checkbox' ||
+      t === 'radio' ||
+      t === 'range' ||
+      t === 'file' ||
+      t === 'button' ||
+      t === 'submit' ||
+      t === 'reset' ||
+      t === 'hidden' ||
+      t === 'color'
+    ) {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+function extractImageFileFromClipboard(data: DataTransfer | null): File | null {
+  if (!data) return null;
+  if (data.files?.length) {
+    for (let i = 0; i < data.files.length; i++) {
+      const f = data.files[i];
+      if (f && isImageMimeType(f.type)) return f;
+    }
+  }
+  if (data.items?.length) {
+    for (let i = 0; i < data.items.length; i++) {
+      const item = data.items[i];
+      if (item.kind === 'file' && item.type && isImageMimeType(item.type)) {
+        const f = item.getAsFile();
+        if (f) return f;
+      }
+    }
+  }
+  return null;
+}
+
 export default function App() {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
 
@@ -43,6 +101,7 @@ export default function App() {
   const [upscaleMultiplier, setUpscaleMultiplier] = useState(1);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pasteToastMessage, setPasteToastMessage] = useState<string | null>(null);
 
   const cropPreview = usePreparedCropPreview(imageSrc, removeBackground, tolerance);
 
@@ -69,6 +128,38 @@ export default function App() {
     setInteractiveCropBounds(bounds);
   }, []);
 
+  const loadImageFromFile = useCallback((file: File, options?: { showPastedToast?: boolean }) => {
+    if (!isImageMimeType(file.type)) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result as string;
+      setImageSrc(result);
+      setInteractiveCropBounds(null);
+      if (options?.showPastedToast) {
+        setPasteToastMessage('Imagem colada');
+      }
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (isEditablePasteTarget(e.target)) return;
+      const file = extractImageFileFromClipboard(e.clipboardData);
+      if (!file) return;
+      e.preventDefault();
+      loadImageFromFile(file, { showPastedToast: true });
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [loadImageFromFile]);
+
+  useEffect(() => {
+    if (!pasteToastMessage) return;
+    const timer = window.setTimeout(() => setPasteToastMessage(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [pasteToastMessage]);
+
   const checkeredStyle: React.CSSProperties = {
     backgroundColor: '#f8fafc',
     backgroundImage: `linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
@@ -81,15 +172,8 @@ export default function App() {
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const result = event.target?.result as string;
-        setImageSrc(result);
-        setInteractiveCropBounds(null);
-      };
-      reader.readAsDataURL(file);
-    }
+    if (file) loadImageFromFile(file);
+    e.target.value = '';
   };
 
   const handleDownload = () => {
@@ -466,6 +550,16 @@ export default function App() {
           Processamento local no navegador — sua imagem não é enviada a servidores de edição.
         </footer>
       </div>
+
+      {pasteToastMessage && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-full border border-white/35 bg-loft-green/95 px-5 py-2.5 text-sm font-semibold text-white shadow-loft-lg backdrop-blur-md"
+        >
+          {pasteToastMessage}
+        </div>
+      )}
     </div>
   );
 }
