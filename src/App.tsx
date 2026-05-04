@@ -95,7 +95,7 @@ export default function App() {
   const debouncedCropForExport = useDebouncedValue(interactiveCropBounds, 120);
 
   const [watermarkEnabled, setWatermarkEnabled] = useState(false);
-  const [watermarkColorMode, setWatermarkColorMode] = useState<WatermarkColorMode>('white');
+  const [watermarkColorMode, setWatermarkColorMode] = useState<WatermarkColorMode>('original');
   const [watermarkOpacityPercent, setWatermarkOpacityPercent] = useState(40);
 
   const [selectedFormat, setSelectedFormat] = useState<OutputFormat>('custom');
