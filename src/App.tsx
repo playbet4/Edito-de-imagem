@@ -217,7 +217,7 @@ export default function App() {
               className="max-h-[112px] sm:max-h-[140px] w-auto max-w-full object-contain"
             />
           </div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-loft-orange">Loft · Imobiliário</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-loft-orange">Loft · Implantação</p>
           <h1 className="text-3xl sm:text-4xl font-bold text-loft-green tracking-tight">Processador de logo</h1>
           <p className="text-loft-green/80 text-sm sm:text-base leading-relaxed">
             Remova fundo no navegador, ajuste o recorte na imagem, escolha o formato e exporte com ou sem marca
