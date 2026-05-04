@@ -4,16 +4,15 @@ import type { ContentBounds } from '../types/imagePipeline';
 import { clampCropBounds } from '../lib/imagePipeline';
 
 const MIN_SIZE = 2;
-const CORNER_HIT_NATURAL = 14;
+/** Hit target around each corner in screen pixels (handles natural-image scaling). */
+const CORNER_HIT_SCREEN_PX = 20;
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se';
 
-interface DragState {
-  kind: 'move' | 'resize';
-  corner?: Corner;
-  startBounds: ContentBounds;
-  anchor: { x: number; y: number };
-}
+type DragState =
+  | { kind: 'move'; startBounds: ContentBounds; anchor: { x: number; y: number } }
+  | { kind: 'resize'; corner: Corner; startBounds: ContentBounds; anchor: { x: number; y: number } }
+  | { kind: 'marquee'; startNatural: { x: number; y: number } };
 
 function getContainedLayout(img: HTMLImageElement): {
   scale: number;
@@ -42,6 +41,54 @@ function clientToNatural(img: HTMLImageElement, clientX: number, clientY: number
   return { x: lx / scale, y: ly / scale };
 }
 
+function naturalToClientPoint(
+  img: HTMLImageElement,
+  nx: number,
+  ny: number
+): { x: number; y: number } {
+  const r = img.getBoundingClientRect();
+  const { scale, offsetX, offsetY } = getContainedLayout(img);
+  return {
+    x: r.left + offsetX + nx * scale,
+    y: r.top + offsetY + ny * scale,
+  };
+}
+
+function clampNatural(
+  nx: number,
+  ny: number,
+  naturalWidth: number,
+  naturalHeight: number
+): { x: number; y: number } {
+  return {
+    x: Math.max(0, Math.min(naturalWidth - 1, Math.round(nx))),
+    y: Math.max(0, Math.min(naturalHeight - 1, Math.round(ny))),
+  };
+}
+
+function hitCornerScreen(
+  img: HTMLImageElement,
+  bounds: ContentBounds,
+  clientX: number,
+  clientY: number,
+  thresholdPx: number
+): Corner | null {
+  const corners: { id: Corner; nx: number; ny: number }[] = [
+    { id: 'nw', nx: bounds.minX, ny: bounds.minY },
+    { id: 'ne', nx: bounds.maxX, ny: bounds.minY },
+    { id: 'sw', nx: bounds.minX, ny: bounds.maxY },
+    { id: 'se', nx: bounds.maxX, ny: bounds.maxY },
+  ];
+  const thr2 = thresholdPx * thresholdPx;
+  for (const c of corners) {
+    const p = naturalToClientPoint(img, c.nx, c.ny);
+    const dx = clientX - p.x;
+    const dy = clientY - p.y;
+    if (dx * dx + dy * dy <= thr2) return c.id;
+  }
+  return null;
+}
+
 function boundsToOverlayStyle(img: HTMLImageElement, b: ContentBounds): React.CSSProperties {
   const { scale, offsetX, offsetY } = getContainedLayout(img);
   const left = offsetX + b.minX * scale;
@@ -49,20 +96,6 @@ function boundsToOverlayStyle(img: HTMLImageElement, b: ContentBounds): React.CS
   const w = (b.maxX - b.minX + 1) * scale;
   const h = (b.maxY - b.minY + 1) * scale;
   return { left, top, width: w, height: h };
-}
-
-function hitCorner(nx: number, ny: number, bounds: ContentBounds): Corner | null {
-  const corners: { id: Corner; x: number; y: number }[] = [
-    { id: 'nw', x: bounds.minX, y: bounds.minY },
-    { id: 'ne', x: bounds.maxX, y: bounds.minY },
-    { id: 'sw', x: bounds.minX, y: bounds.maxY },
-    { id: 'se', x: bounds.maxX, y: bounds.maxY },
-  ];
-  const thr = CORNER_HIT_NATURAL;
-  for (const c of corners) {
-    if (Math.abs(nx - c.x) <= thr && Math.abs(ny - c.y) <= thr) return c.id;
-  }
-  return null;
 }
 
 export interface InteractiveCropEditorProps {
@@ -95,10 +128,11 @@ export function InteractiveCropEditor({
   const pointerDown = (e: React.PointerEvent) => {
     if (disabled || !effective || !autoBounds || !imgRef.current) return;
     const img = imgRef.current;
-    const { x, y } = clientToNatural(img, e.clientX, e.clientY);
+    const raw = clientToNatural(img, e.clientX, e.clientY);
+    const { x, y } = clampNatural(raw.x, raw.y, naturalWidth, naturalHeight);
     const bounds = effective;
 
-    const corner = hitCorner(x, y, bounds);
+    const corner = hitCornerScreen(img, bounds, e.clientX, e.clientY, CORNER_HIT_SCREEN_PX);
     if (corner) {
       e.preventDefault();
       if (cropBounds === null) {
@@ -114,12 +148,10 @@ export function InteractiveCropEditor({
       return;
     }
 
-    if (
-      x >= bounds.minX &&
-      x <= bounds.maxX &&
-      y >= bounds.minY &&
-      y <= bounds.maxY
-    ) {
+    const inside =
+      x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY;
+
+    if (inside) {
       e.preventDefault();
       if (cropBounds === null) {
         onCropChange({ ...bounds });
@@ -130,16 +162,44 @@ export function InteractiveCropEditor({
         startBounds: { ...bounds },
         anchor: { x, y },
       });
+      return;
     }
+
+    e.preventDefault();
+    img.setPointerCapture(e.pointerId);
+    setDrag({ kind: 'marquee', startNatural: { x, y } });
   };
 
   const pointerMove = useCallback(
     (e: PointerEvent) => {
       if (!drag || !imgRef.current) return;
       const img = imgRef.current;
-      const { x, y } = clientToNatural(img, e.clientX, e.clientY);
+      const raw = clientToNatural(img, e.clientX, e.clientY);
+      const { x, y } = clampNatural(raw.x, raw.y, naturalWidth, naturalHeight);
       const W = naturalWidth;
       const H = naturalHeight;
+
+      if (drag.kind === 'marquee') {
+        const x0 = drag.startNatural.x;
+        const y0 = drag.startNatural.y;
+        const minX = Math.min(x0, x);
+        const maxX = Math.max(x0, x);
+        const minY = Math.min(y0, y);
+        const maxY = Math.max(y0, y);
+        const next = clampCropBounds(
+          {
+            minX: Math.round(minX),
+            minY: Math.round(minY),
+            maxX: Math.round(maxX),
+            maxY: Math.round(maxY),
+          },
+          W,
+          H
+        );
+        onCropChange(next);
+        return;
+      }
+
       const b = drag.startBounds;
 
       let next: ContentBounds;
@@ -155,7 +215,7 @@ export function InteractiveCropEditor({
         const maxY = minY + spanY;
         next = { minX, minY, maxX, maxY };
       } else {
-        const c = drag.corner!;
+        const c = drag.corner;
         let { minX, minY, maxX, maxY } = b;
         const px = Math.max(0, Math.min(W - 1, Math.round(x)));
         const py = Math.max(0, Math.min(H - 1, Math.round(y)));
@@ -204,8 +264,7 @@ export function InteractiveCropEditor({
   }, [drag, pointerMove, pointerUp]);
 
   const img = imgRef.current;
-  const cropStyle =
-    img && effective ? boundsToOverlayStyle(img, effective) : null;
+  const cropStyle = img && effective ? boundsToOverlayStyle(img, effective) : null;
   const cw = img?.clientWidth ?? 0;
   const ch = img?.clientHeight ?? 0;
 

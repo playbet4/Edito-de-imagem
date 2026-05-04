@@ -16,6 +16,7 @@ import { usePreparedCropPreview } from './hooks/usePreparedCropPreview';
 import { useDebouncedValue } from './hooks/useDebouncedValue';
 import { InteractiveCropEditor } from './components/InteractiveCropEditor';
 import type { ContentBounds, OutputFormat, WatermarkColorMode } from './types/imagePipeline';
+import loftLogoUrl from './assets/loft-logo.png';
 
 function boundsKey(b: ContentBounds | null): string {
   if (!b) return 'auto';
@@ -208,7 +209,12 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50/90 via-white to-orange-50/70 font-sans text-loft-green">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-8">
-        <header className="text-center space-y-3 max-w-2xl mx-auto glass-panel px-6 py-6 sm:px-8">
+        <header className="text-center space-y-4 max-w-2xl mx-auto glass-panel px-6 py-6 sm:px-8">
+          <img
+            src={loftLogoUrl}
+            alt="Loft · Editor de imagens"
+            className="mx-auto max-h-[100px] sm:max-h-[120px] w-auto max-w-full object-contain"
+          />
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-loft-orange">Loft · Imobiliário</p>
           <h1 className="text-3xl sm:text-4xl font-bold text-loft-green tracking-tight">Processador de logo</h1>
           <p className="text-loft-green/80 text-sm sm:text-base leading-relaxed">
@@ -256,8 +262,9 @@ export default function App() {
                     <div>
                       <h2 className="text-lg font-bold text-loft-green">Recorte na imagem</h2>
                       <p className="text-sm text-loft-green/75 mt-1 leading-relaxed">
-                        Ajuste a moldura aqui: arraste o centro para mover ou os cantos para refinar o que entra no
-                        arquivo final.
+                        Arraste dentro da moldura para mover; arraste nos cantos para redimensionar (área de clique
+                        ampla). Para definir um recorte novo, clique em uma área escurecida fora da moldura e arraste
+                        para desenhar o retângulo desejado.
                       </p>
                     </div>
                     <InteractiveCropEditor
