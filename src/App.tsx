@@ -16,7 +16,7 @@ import { usePreparedCropPreview } from './hooks/usePreparedCropPreview';
 import { useDebouncedValue } from './hooks/useDebouncedValue';
 import { InteractiveCropEditor } from './components/InteractiveCropEditor';
 import type { ContentBounds, OutputFormat, WatermarkColorMode } from './types/imagePipeline';
-import loftLogoUrl from './assets/loft-logo.png';
+import loftLogoUrl from './assets/loft-logo-header.png';
 
 function boundsKey(b: ContentBounds | null): string {
   if (!b) return 'auto';
@@ -210,11 +210,13 @@ export default function App() {
     <div className="min-h-screen bg-gradient-to-br from-emerald-50/90 via-white to-orange-50/70 font-sans text-loft-green">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-8">
         <header className="text-center space-y-4 max-w-2xl mx-auto glass-panel px-6 py-6 sm:px-8">
-          <img
-            src={loftLogoUrl}
-            alt="Loft · Editor de imagens"
-            className="mx-auto max-h-[100px] sm:max-h-[120px] w-auto max-w-full object-contain"
-          />
+          <div className="mx-auto inline-flex max-w-full rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-loft-green/10">
+            <img
+              src={loftLogoUrl}
+              alt="Loft · Editor de imagens"
+              className="max-h-[100px] sm:max-h-[120px] w-auto max-w-full object-contain"
+            />
+          </div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-loft-orange">Loft · Imobiliário</p>
           <h1 className="text-3xl sm:text-4xl font-bold text-loft-green tracking-tight">Processador de logo</h1>
           <p className="text-loft-green/80 text-sm sm:text-base leading-relaxed">
