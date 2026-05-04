@@ -210,11 +210,11 @@ export default function App() {
     <div className="min-h-screen bg-gradient-to-br from-emerald-50/90 via-white to-orange-50/70 font-sans text-loft-green">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-8">
         <header className="text-center space-y-4 max-w-2xl mx-auto glass-panel px-6 py-6 sm:px-8">
-          <div className="mx-auto inline-flex max-w-full rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-loft-green/10">
+          <div className="mx-auto inline-flex max-w-full rounded-2xl bg-white px-4 py-3 sm:px-5 sm:py-4 shadow-sm ring-1 ring-loft-green/10">
             <img
               src={loftLogoUrl}
               alt="Loft · Editor de imagens"
-              className="max-h-[100px] sm:max-h-[120px] w-auto max-w-full object-contain"
+              className="max-h-[112px] sm:max-h-[140px] w-auto max-w-full object-contain"
             />
           </div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-loft-orange">Loft · Imobiliário</p>
