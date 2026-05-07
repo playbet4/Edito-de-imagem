@@ -10,6 +10,8 @@ import {
   Droplets,
   Loader2,
   ChevronDown,
+  Copy,
+  RotateCcw,
 } from 'lucide-react';
 import { useImagePipeline } from './hooks/useImagePipeline';
 import { usePreparedCropPreview } from './hooks/usePreparedCropPreview';
@@ -65,6 +67,12 @@ function isEditablePasteTarget(target: EventTarget | null): boolean {
   return false;
 }
 
+const DEFAULT_WATERMARK_MESSAGE = `Marca d'água configurada com sucesso! 💧
+
+Posição: Centro
+Tamanho: Médio
+Opacidade: 50%`;
+
 function extractImageFileFromClipboard(data: DataTransfer | null): File | null {
   if (!data) return null;
   if (data.files?.length) {
@@ -103,6 +111,9 @@ export default function App() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pasteToastMessage, setPasteToastMessage] = useState<string | null>(null);
+  const [watermarkClientMessage, setWatermarkClientMessage] = useState<string>(
+    DEFAULT_WATERMARK_MESSAGE
+  );
 
   const cropPreview = usePreparedCropPreview(imageSrc, removeBackground, tolerance);
 
@@ -161,7 +172,7 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [pasteToastMessage]);
 
-  const checkeredStyle: React.CSSProperties = {
+  const checkeredStyleLight: React.CSSProperties = {
     backgroundColor: '#f8fafc',
     backgroundImage: `linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
                       linear-gradient(-45deg, #e2e8f0 25%, transparent 25%),
@@ -170,6 +181,19 @@ export default function App() {
     backgroundSize: '20px 20px',
     backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
   };
+
+  const checkeredStyleDark: React.CSSProperties = {
+    backgroundColor: '#0f172a',
+    backgroundImage: `linear-gradient(45deg, #1e293b 25%, transparent 25%),
+                      linear-gradient(-45deg, #1e293b 25%, transparent 25%),
+                      linear-gradient(45deg, transparent 75%, #1e293b 75%),
+                      linear-gradient(-45deg, transparent 75%, #1e293b 75%)`,
+    backgroundSize: '20px 20px',
+    backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
+  };
+
+  const useDarkPreviewBackground = watermarkEnabled && watermarkColorMode === 'white';
+  const previewBackgroundStyle = useDarkPreviewBackground ? checkeredStyleDark : checkeredStyleLight;
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -193,6 +217,19 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleCopyWatermarkMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(watermarkClientMessage);
+      setPasteToastMessage('Texto copiado');
+    } catch {
+      setPasteToastMessage('Não foi possível copiar');
+    }
+  };
+
+  const handleResetWatermarkMessage = () => {
+    setWatermarkClientMessage(DEFAULT_WATERMARK_MESSAGE);
   };
 
   const cropReady =
@@ -311,17 +348,26 @@ export default function App() {
                       )}
                     </div>
                   </div>
-                  <div className="relative flex-1 flex items-center justify-center p-6 min-h-[240px]" style={checkeredStyle}>
+                  <div
+                    className="relative flex-1 flex items-center justify-center p-6 min-h-[240px]"
+                    style={previewBackgroundStyle}
+                  >
                     {showFinalPreviewBusy && (
-                      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-white/55 backdrop-blur-[2px]">
+                      <div
+                        className={`absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 backdrop-blur-[2px] ${useDarkPreviewBackground ? 'bg-slate-900/55' : 'bg-white/55'}`}
+                      >
                         <Loader2 size={28} className="animate-spin text-loft-orange" />
-                        <span className="text-xs font-semibold text-loft-green">
+                        <span
+                          className={`text-xs font-semibold ${useDarkPreviewBackground ? 'text-white' : 'text-loft-green'}`}
+                        >
                           {isProcessing ? 'Processando…' : 'Atualizando prévia…'}
                         </span>
                       </div>
                     )}
                     {!showFinalPreviewBusy && !processedSrc && (
-                      <div className="flex flex-col items-center gap-2 text-loft-green/50">
+                      <div
+                        className={`flex flex-col items-center gap-2 ${useDarkPreviewBackground ? 'text-white/65' : 'text-loft-green/50'}`}
+                      >
                         <Maximize size={28} className="opacity-60" />
                         <span className="text-sm">Nada visível para exportar</span>
                       </div>
@@ -335,6 +381,48 @@ export default function App() {
                     )}
                   </div>
                 </section>
+
+                {watermarkEnabled && (
+                  <section
+                    id="section-watermark-message"
+                    className="scroll-mt-24 space-y-3 rounded-3xl border border-white/50 bg-white/35 p-5 sm:p-6 shadow-loft backdrop-blur-md"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h2 className="text-sm font-bold text-loft-green">
+                          Texto sugerido para enviar ao cliente
+                        </h2>
+                        <p className="text-xs text-loft-green/70 mt-0.5 leading-relaxed">
+                          Apenas uma sugestão editável — não afeta o resultado da imagem. Ajuste
+                          posição, tamanho e opacidade conforme combinar.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 justify-end">
+                        <button
+                          type="button"
+                          onClick={handleResetWatermarkMessage}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-loft-green/20 bg-white/80 px-3 py-1.5 text-xs font-semibold text-loft-green shadow-sm transition-colors hover:bg-white"
+                        >
+                          <RotateCcw size={14} /> Restaurar padrão
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCopyWatermarkMessage}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-loft-green px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-loft-green/90"
+                        >
+                          <Copy size={14} /> Copiar texto
+                        </button>
+                      </div>
+                    </div>
+                    <textarea
+                      value={watermarkClientMessage}
+                      onChange={(e) => setWatermarkClientMessage(e.target.value)}
+                      rows={6}
+                      spellCheck={false}
+                      className="w-full resize-y rounded-2xl border border-loft-green/15 bg-white/90 p-3 text-sm text-loft-green outline-none focus:ring-2 focus:ring-loft-orange/40 font-mono leading-relaxed"
+                    />
+                  </section>
+                )}
               </>
             )}
           </div>
