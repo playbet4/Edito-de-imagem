@@ -1,4 +1,4 @@
-export type OutputFormat = 'custom' | 'relatorio' | 'site' | 'favicon';
+export type OutputFormat = 'custom' | 'relatorio' | 'logoAdm' | 'site' | 'favicon';
 
 export type WatermarkColorMode = 'white' | 'original';
 

@@ -184,6 +184,7 @@ export default function App() {
 
     let filename = 'logo_imobiliaria.png';
     if (selectedFormat === 'relatorio') filename = 'relatorio.png';
+    else if (selectedFormat === 'logoAdm') filename = 'logo_adm.png';
     else if (selectedFormat === 'site') filename = 'LOGO_SITE.png';
     else if (selectedFormat === 'favicon') filename = 'favicon.png';
     if (watermarkEnabled) filename = `marca_dagua_${filename}`;
@@ -438,6 +439,7 @@ export default function App() {
                       >
                         <option value="custom">Livre / automático</option>
                         <option value="relatorio">Relatório (200×80)</option>
+                        <option value="logoAdm">Logo ADM (200×74)</option>
                         <option value="site">Site (500×500)</option>
                         <option value="favicon">Favicon (30×30)</option>
                       </select>

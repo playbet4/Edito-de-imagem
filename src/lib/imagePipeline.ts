@@ -196,6 +196,8 @@ function formatDimensions(
   switch (format) {
     case 'relatorio':
       return { baseW: 200, baseH: 80, isFixed: true, maxPadding: 10 };
+    case 'logoAdm':
+      return { baseW: 200, baseH: 74, isFixed: true, maxPadding: 10 };
     case 'site':
       return { baseW: 500, baseH: 500, isFixed: true, maxPadding: 30 };
     case 'favicon':
