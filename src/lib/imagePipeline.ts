@@ -171,23 +171,35 @@ export function workingCanvasToPngDataUrl(canvas: HTMLCanvasElement): string {
   return canvas.toDataURL('image/png');
 }
 
-export function applyWatermarkToImageData(
-  data: Uint8ClampedArray,
+/**
+ * Applies the watermark color/opacity transform onto a 2D context using native
+ * composite operations. Avoids the per-pixel JS loop (10-100x faster on large
+ * canvases) by relying on the GPU/native canvas pipeline.
+ *
+ * - White color mode → `source-atop` with opaque white preserves destination
+ *   alpha while replacing RGB.
+ * - Opacity → `destination-in` with `rgba(0,0,0,factor)` multiplies alpha.
+ */
+export function applyWatermarkComposite(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
   colorMode: WatermarkColorMode,
   opacityPercent: number
 ): void {
   const clamped = Math.min(100, Math.max(10, opacityPercent));
   const factor = clamped / 100;
-  for (let i = 0; i < data.length; i += 4) {
-    const a = data[i + 3];
-    if (a === 0) continue;
-    if (colorMode === 'white') {
-      data[i] = 255;
-      data[i + 1] = 255;
-      data[i + 2] = 255;
-    }
-    data[i + 3] = Math.round(a * factor);
+
+  ctx.save();
+  if (colorMode === 'white') {
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
   }
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.fillStyle = `rgba(0, 0, 0, ${factor})`;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
 }
 
 function formatDimensions(
@@ -214,20 +226,35 @@ function cropSizeInclusive(bounds: ContentBounds): { cropW: number; cropH: numbe
   };
 }
 
-export function processImageToPng(img: HTMLImageElement, params: ImagePipelineParams): string | null {
-  const { canvas, autoBounds } = buildWorkingCanvas(
-    img,
-    params.removeBackground,
-    params.tolerance
-  );
+/**
+ * Light-weight params controlling the post-background-removal stages
+ * (crop / scale / format / watermark). Used by the cached fast path so we
+ * don't re-decode the source image or re-run background removal on every
+ * slider tick.
+ */
+export type FinalizeParams = Pick<
+  ImagePipelineParams,
+  | 'padding'
+  | 'selectedFormat'
+  | 'upscaleMultiplier'
+  | 'watermarkEnabled'
+  | 'watermarkColorMode'
+  | 'watermarkOpacityPercent'
+  | 'interactiveCropBounds'
+>;
 
-  if (!autoBounds) return null;
-
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-
-  const w = canvas.width;
-  const h = canvas.height;
+/**
+ * Light-weight stage that produces the final HTMLCanvasElement (cropped, scaled
+ * and watermarked). Encoding to PNG is left to the caller so it can use async
+ * `toBlob` and avoid blocking the main thread.
+ */
+export function finalizeWorkingCanvas(
+  workingCanvas: HTMLCanvasElement,
+  autoBounds: ContentBounds,
+  params: FinalizeParams
+): HTMLCanvasElement | null {
+  const w = workingCanvas.width;
+  const h = workingCanvas.height;
 
   let bounds: ContentBounds;
   if (params.interactiveCropBounds) {
@@ -272,21 +299,67 @@ export function processImageToPng(img: HTMLImageElement, params: ImagePipelinePa
     const drawH = cropH * scale;
     const drawX = (targetW - drawW) / 2;
     const drawY = (targetH - drawH) / 2;
-    finalCtx.drawImage(canvas, bounds.minX, bounds.minY, cropW, cropH, drawX, drawY, drawW, drawH);
+    finalCtx.drawImage(
+      workingCanvas,
+      bounds.minX,
+      bounds.minY,
+      cropW,
+      cropH,
+      drawX,
+      drawY,
+      drawW,
+      drawH
+    );
   } else {
     const drawW = cropW * u;
     const drawH = cropH * u;
     const p = params.padding * u;
-    finalCtx.drawImage(canvas, bounds.minX, bounds.minY, cropW, cropH, p, p, drawW, drawH);
+    finalCtx.drawImage(
+      workingCanvas,
+      bounds.minX,
+      bounds.minY,
+      cropW,
+      cropH,
+      p,
+      p,
+      drawW,
+      drawH
+    );
   }
 
   if (params.watermarkEnabled) {
-    const outCtx = finalCanvas.getContext('2d');
-    if (!outCtx) return null;
-    const outData = outCtx.getImageData(0, 0, targetW, targetH);
-    applyWatermarkToImageData(outData.data, params.watermarkColorMode, params.watermarkOpacityPercent);
-    outCtx.putImageData(outData, 0, 0);
+    applyWatermarkComposite(
+      finalCtx,
+      targetW,
+      targetH,
+      params.watermarkColorMode,
+      params.watermarkOpacityPercent
+    );
   }
 
+  return finalCanvas;
+}
+
+/**
+ * Synchronous helper returning a PNG data URL. Prefer `finalizeWorkingCanvas`
+ * + async `canvas.toBlob` in interactive paths to avoid blocking on encoding.
+ */
+export function finalizeWorkingCanvasToPng(
+  workingCanvas: HTMLCanvasElement,
+  autoBounds: ContentBounds,
+  params: FinalizeParams
+): string | null {
+  const finalCanvas = finalizeWorkingCanvas(workingCanvas, autoBounds, params);
+  if (!finalCanvas) return null;
   return finalCanvas.toDataURL('image/png');
+}
+
+export function processImageToPng(img: HTMLImageElement, params: ImagePipelineParams): string | null {
+  const { canvas, autoBounds } = buildWorkingCanvas(
+    img,
+    params.removeBackground,
+    params.tolerance
+  );
+  if (!autoBounds) return null;
+  return finalizeWorkingCanvasToPng(canvas, autoBounds, params);
 }

@@ -2,6 +2,15 @@ export type OutputFormat = 'custom' | 'relatorio' | 'logoAdm' | 'site' | 'favico
 
 export type WatermarkColorMode = 'white' | 'original';
 
+export type WatermarkPosition =
+  | 'top-left'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-right'
+  | 'center';
+
+export type WatermarkSize = 'small' | 'medium' | 'large';
+
 export interface ImagePipelineParams {
   tolerance: number;
   padding: number;
