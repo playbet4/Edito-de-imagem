@@ -54,46 +54,89 @@ export function deriveBackgroundColorFromBorderSamples(
   };
 }
 
+/**
+ * Marks pixels close to `bg` as fully transparent. Hot loop — uses squared
+ * distance (no Math.sqrt), local primitives (no per-pixel allocations) and
+ * caches array length to stay in a JIT-friendly shape.
+ */
 export function removeBackgroundByColorDistance(
   data: Uint8ClampedArray,
   bg: { r: number; g: number; b: number },
   tolerance: number
 ): void {
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-    const dist = colorDistance({ r, g, b }, bg);
-    if (dist <= tolerance) {
+  const bgR = bg.r;
+  const bgG = bg.g;
+  const bgB = bg.b;
+  const tolSq = tolerance * tolerance;
+  const len = data.length;
+  for (let i = 0; i < len; i += 4) {
+    const dr = data[i] - bgR;
+    const dg = data[i + 1] - bgG;
+    const db = data[i + 2] - bgB;
+    if (dr * dr + dg * dg + db * db <= tolSq) {
       data[i + 3] = 0;
     }
   }
 }
 
+/**
+ * Trims the bounding box of opaque pixels using row-then-column edge scans
+ * with early termination. For typical logos this is dramatically faster than
+ * a full pass because the search stops as soon as the first opaque pixel of
+ * each edge is found.
+ */
 export function computeContentBounds(
   data: Uint8ClampedArray,
   width: number,
   height: number
 ): ContentBounds | null {
-  let minX = width;
-  let minY = height;
-  let maxX = 0;
-  let maxY = 0;
-  let hasVisible = false;
+  let minY = -1;
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * width * 4 + 3;
+    const rowEnd = rowStart + width * 4;
+    for (let i = rowStart; i < rowEnd; i += 4) {
+      if (data[i] > 0) {
+        minY = y;
+        break;
+      }
+    }
+    if (minY !== -1) break;
+  }
+  if (minY === -1) return null;
 
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] <= 0) continue;
-    hasVisible = true;
-    const pixelIndex = i / 4;
-    const x = pixelIndex % width;
-    const y = Math.floor(pixelIndex / width);
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
+  let maxY = minY;
+  for (let y = height - 1; y > minY; y--) {
+    const rowStart = y * width * 4 + 3;
+    const rowEnd = rowStart + width * 4;
+    for (let i = rowStart; i < rowEnd; i += 4) {
+      if (data[i] > 0) {
+        maxY = y;
+        break;
+      }
+    }
+    if (maxY !== minY) break;
   }
 
-  if (!hasVisible) return null;
+  let minX = width;
+  let maxX = -1;
+  for (let y = minY; y <= maxY; y++) {
+    const rowOffset = y * width * 4;
+    for (let x = 0; x < minX; x++) {
+      if (data[rowOffset + x * 4 + 3] > 0) {
+        minX = x;
+        break;
+      }
+    }
+    for (let x = width - 1; x > maxX; x--) {
+      if (data[rowOffset + x * 4 + 3] > 0) {
+        maxX = x;
+        break;
+      }
+    }
+    if (minX === 0 && maxX === width - 1) break;
+  }
+
+  if (maxX < minX) return null;
   return { minX, minY, maxX, maxY };
 }
 
@@ -165,10 +208,6 @@ export function buildWorkingCanvas(
 
   const autoBounds = computeContentBounds(data, canvas.width, canvas.height);
   return { canvas, autoBounds };
-}
-
-export function workingCanvasToPngDataUrl(canvas: HTMLCanvasElement): string {
-  return canvas.toDataURL('image/png');
 }
 
 /**

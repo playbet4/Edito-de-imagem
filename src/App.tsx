@@ -22,7 +22,6 @@ import {
   MessageSquareText,
 } from 'lucide-react';
 import { useImagePipeline } from './hooks/useImagePipeline';
-import { usePreparedCropPreview } from './hooks/usePreparedCropPreview';
 import { useDebouncedValue } from './hooks/useDebouncedValue';
 import { useWatermarkPreview } from './hooks/useWatermarkPreview';
 import { InteractiveCropEditor } from './components/InteractiveCropEditor';
@@ -170,9 +169,7 @@ export default function App() {
   const [watermarkPosition, setWatermarkPosition] = useState<WatermarkPosition>('center');
   const [watermarkSize, setWatermarkSize] = useState<WatermarkSize>('medium');
 
-  const cropPreview = usePreparedCropPreview(imageSrc, removeBackground, tolerance);
-
-  const { processedSrc, isProcessing } = useImagePipeline(imageSrc, {
+  const { processedSrc, isProcessing, cropPreview } = useImagePipeline(imageSrc, {
     tolerance,
     padding,
     interactiveCropBounds: debouncedCropForExport,

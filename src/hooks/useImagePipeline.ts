@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import {
   buildWorkingCanvas,
   finalizeWorkingCanvas,
@@ -27,20 +27,31 @@ interface WorkingState {
   autoBounds: ContentBounds;
 }
 
+export interface PreparedCropPreview {
+  /** Object URL pointing at the working canvas (PNG). */
+  dataUrl: string;
+  autoBounds: ContentBounds | null;
+  width: number;
+  height: number;
+}
+
+interface UseImagePipelineResult {
+  processedSrc: string | null;
+  isProcessing: boolean;
+  cropPreview: PreparedCropPreview | null;
+}
+
 /**
- * Splits the pipeline into a heavy stage (decode source + remove background +
- * compute auto-bounds, cached against `imageSrc + removeBackground +
- * debouncedTolerance`) and a light stage (crop / scale / watermark) that runs
- * on slider changes.
- *
- * The light stage uses native canvas composite ops for the watermark and
- * `canvas.toBlob` to encode the PNG asynchronously — both keep the main thread
- * free so sidebar tweaks feel immediate.
+ * Single source of truth for both the export pipeline and the interactive crop
+ * preview. Background removal + auto-bounds (the heavy stage) run only when
+ * source/tolerance/removeBackground change. The light stage (crop, scale,
+ * watermark, encode) runs on slider/format/watermark tweaks. Encoding uses
+ * `canvas.toBlob` + Object URLs so PNG encoding does not block the main thread.
  */
 export function useImagePipeline(
   imageSrc: string | null,
   options: UseImagePipelineOptions
-): { processedSrc: string | null; isProcessing: boolean } {
+): UseImagePipelineResult {
   const debouncedTolerance = useDebouncedValue(options.tolerance, 200);
   const debouncedPadding = useDebouncedValue(options.padding, 200);
   const debouncedOpacity = useDebouncedValue(options.watermarkOpacityPercent, 120);
@@ -56,14 +67,19 @@ export function useImagePipeline(
 
   const [workingState, setWorkingState] = useState<WorkingState | null>(null);
   const [processedSrc, setProcessedSrc] = useState<string | null>(null);
+  const [cropPreview, setCropPreview] = useState<PreparedCropPreview | null>(null);
   const [isHeavyProcessing, setIsHeavyProcessing] = useState(false);
 
   const decodedImageRef = useRef<{ src: string; image: HTMLImageElement } | null>(null);
-  const currentObjectUrlRef = useRef<string | null>(null);
+  const finalUrlRef = useRef<string | null>(null);
+  const cropUrlRef = useRef<string | null>(null);
 
-  const replaceObjectUrl = (next: string | null) => {
-    const previous = currentObjectUrlRef.current;
-    currentObjectUrlRef.current = next;
+  const replaceUrl = (
+    ref: MutableRefObject<string | null>,
+    next: string | null
+  ) => {
+    const previous = ref.current;
+    ref.current = next;
     if (previous && previous !== next) {
       URL.revokeObjectURL(previous);
     }
@@ -71,17 +87,26 @@ export function useImagePipeline(
 
   useEffect(() => {
     return () => {
-      if (currentObjectUrlRef.current) {
-        URL.revokeObjectURL(currentObjectUrlRef.current);
-        currentObjectUrlRef.current = null;
+      if (finalUrlRef.current) {
+        URL.revokeObjectURL(finalUrlRef.current);
+        finalUrlRef.current = null;
+      }
+      if (cropUrlRef.current) {
+        URL.revokeObjectURL(cropUrlRef.current);
+        cropUrlRef.current = null;
       }
     };
   }, []);
 
+  // Heavy stage: decode source, optionally remove background, compute auto-bounds,
+  // and produce the crop-preview Object URL — all in a single pass shared by both
+  // the interactive crop UI and the export pipeline.
   useEffect(() => {
     if (!imageSrc) {
       setWorkingState(null);
       decodedImageRef.current = null;
+      replaceUrl(cropUrlRef, null);
+      setCropPreview(null);
       setIsHeavyProcessing(false);
       return;
     }
@@ -95,10 +120,24 @@ export function useImagePipeline(
       if (cancelled) return;
       if (!autoBounds) {
         setWorkingState(null);
-      } else {
-        setWorkingState({ canvas, autoBounds });
+        replaceUrl(cropUrlRef, null);
+        setCropPreview(null);
+        setIsHeavyProcessing(false);
+        return;
       }
-      setIsHeavyProcessing(false);
+      setWorkingState({ canvas, autoBounds });
+      const cropWidth = canvas.width;
+      const cropHeight = canvas.height;
+      canvas.toBlob((blob) => {
+        if (cancelled || !blob) {
+          if (!cancelled) setIsHeavyProcessing(false);
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        replaceUrl(cropUrlRef, url);
+        setCropPreview({ dataUrl: url, autoBounds, width: cropWidth, height: cropHeight });
+        setIsHeavyProcessing(false);
+      }, 'image/png');
     };
 
     const cached = decodedImageRef.current;
@@ -117,6 +156,8 @@ export function useImagePipeline(
     img.onerror = () => {
       if (cancelled) return;
       setWorkingState(null);
+      replaceUrl(cropUrlRef, null);
+      setCropPreview(null);
       setIsHeavyProcessing(false);
     };
     img.src = imageSrc;
@@ -131,9 +172,10 @@ export function useImagePipeline(
       ? 'auto'
       : `${interactiveCropBounds.minX},${interactiveCropBounds.minY},${interactiveCropBounds.maxX},${interactiveCropBounds.maxY}`;
 
+  // Light stage: cheap finalize (crop / scale / watermark composite) + async PNG encode.
   useEffect(() => {
     if (!workingState) {
-      replaceObjectUrl(null);
+      replaceUrl(finalUrlRef, null);
       setProcessedSrc(null);
       return;
     }
@@ -148,14 +190,14 @@ export function useImagePipeline(
       interactiveCropBounds,
     });
     if (!finalCanvas) {
-      replaceObjectUrl(null);
+      replaceUrl(finalUrlRef, null);
       setProcessedSrc(null);
       return;
     }
     finalCanvas.toBlob((blob) => {
       if (cancelled || !blob) return;
       const url = URL.createObjectURL(blob);
-      replaceObjectUrl(url);
+      replaceUrl(finalUrlRef, url);
       setProcessedSrc(url);
     }, 'image/png');
     return () => {
@@ -173,5 +215,5 @@ export function useImagePipeline(
     cropKey,
   ]);
 
-  return { processedSrc, isProcessing: isHeavyProcessing };
+  return { processedSrc, isProcessing: isHeavyProcessing, cropPreview };
 }
