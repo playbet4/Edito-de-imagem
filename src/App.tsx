@@ -308,6 +308,7 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setPasteToastMessage('Download iniciado');
   };
 
   const handleCopyWatermarkMessage = async () => {
@@ -347,6 +348,7 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setPasteToastMessage('Download iniciado');
   };
 
   const handleCopyPropertyPreview = async () => {
@@ -901,44 +903,68 @@ export default function App() {
                       <Download size={20} /> Baixar PNG
                     </button>
                   ) : (
-                    <div className="space-y-3">
-                      <div className="space-y-1.5 rounded-2xl border border-loft-orange/20 bg-white/70 p-3">
+                    <div className="space-y-2.5">
+                      <div className="space-y-2 rounded-2xl border border-loft-orange/20 bg-white/70 p-3">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-loft-green/70 px-0.5">
+                          Arquivo para o cliente
+                        </p>
                         <button
                           type="button"
                           onClick={handleDownload}
                           disabled={!processedSrc || isProcessing}
                           className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-loft-orange px-3 py-2.5 text-sm font-bold text-white shadow shadow-loft-orange/25 transition-colors hover:bg-[#e85f42] disabled:cursor-not-allowed disabled:bg-loft-orange/40"
                         >
-                          <Droplets size={16} /> Marca d&apos;água (PNG)
+                          <Download size={16} />
+                          Baixar marca d&apos;água (PNG)
                         </button>
-                        <p className="text-[11px] leading-snug text-loft-green/65 px-1">
-                          Logo isolado, fundo transparente — arquivo final para o cliente.
+                        <p className="text-[11px] leading-snug text-loft-green/65 px-0.5">
+                          Logo isolado, fundo transparente.
                         </p>
                       </div>
 
-                      <div className="space-y-1.5 rounded-2xl border border-loft-green/20 bg-white/70 p-3">
-                        <div className="flex gap-1.5">
+                      <div
+                        className={`space-y-2 rounded-2xl border p-3 ${
+                          showPropertyPreview
+                            ? 'border-loft-green/20 bg-white/70'
+                            : 'border-loft-green/10 bg-white/50'
+                        }`}
+                      >
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-loft-green/70 px-0.5">
+                          Demonstrativo visual
+                        </p>
+                        <div className="flex flex-col gap-1.5 sm:flex-row">
                           <button
                             type="button"
                             onClick={handleDownloadPropertyPreview}
-                            disabled={!propertyPreviewSrc || isComposingPropertyPreview}
+                            disabled={
+                              !showPropertyPreview ||
+                              !propertyPreviewSrc ||
+                              isComposingPropertyPreview
+                            }
                             className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-loft-green px-3 py-2.5 text-sm font-bold text-white shadow transition-colors hover:bg-loft-green/90 disabled:cursor-not-allowed disabled:bg-loft-green/40"
                           >
-                            <Home size={16} /> Prévia em imóvel
+                            <Download size={16} />
+                            Baixar prévia em imóvel
                           </button>
                           <button
                             type="button"
                             onClick={handleCopyPropertyPreview}
-                            disabled={!propertyPreviewSrc || isComposingPropertyPreview}
-                            className="inline-flex items-center justify-center rounded-full border border-loft-green/25 bg-white px-2.5 py-2.5 text-loft-green shadow-sm transition-colors hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
-                            title="Copiar imagem para a área de transferência"
-                            aria-label="Copiar imagem"
+                            disabled={
+                              !showPropertyPreview ||
+                              !propertyPreviewSrc ||
+                              isComposingPropertyPreview
+                            }
+                            className="inline-flex h-[42px] w-[42px] flex-shrink-0 items-center justify-center rounded-xl border border-loft-green/25 bg-white text-loft-green shadow-sm transition-colors hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
+                            title="Copiar prévia para a área de transferência"
+                            aria-label="Copiar prévia"
                           >
                             <Copy size={14} />
                           </button>
                         </div>
-                        <p className="text-[11px] leading-snug text-loft-green/65 px-1">
-                          Demonstrativo da marca d&apos;água aplicada sobre uma foto real.
+                        <p className="text-[11px] leading-snug text-loft-green/65 px-0.5">
+                          {showPropertyPreview
+                            ? 'Marca d\u2019água sobre foto de exemplo — não é o arquivo final.'
+                            : 'Disponível apenas nos formatos Livre e Site, com remoção de fundo ativa.'}
                         </p>
                       </div>
                     </div>
