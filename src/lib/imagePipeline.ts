@@ -241,6 +241,54 @@ export function applyWatermarkComposite(
   ctx.restore();
 }
 
+/**
+ * Traces a rounded-rectangle path. Hand-rolled with `arcTo` instead of
+ * `ctx.roundRect` so it also works on browsers without the newer canvas API.
+ */
+function traceRoundedRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+): void {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
+/**
+ * Clips the canvas to a rounded rectangle using `destination-in`, which keeps
+ * the existing pixels only inside the path. Single native path fill — no
+ * per-pixel work, so it stays in the cheap light stage.
+ *
+ * The radius is relative to the smaller side, so it scales consistently across
+ * output formats and upscale multipliers.
+ */
+export function applyRoundedCornersMask(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  radiusPercent: number
+): void {
+  const clampedPercent = Math.min(50, Math.max(0, radiusPercent));
+  const radius = (Math.min(width, height) * clampedPercent) / 100;
+  if (radius <= 0) return;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.fillStyle = '#000000';
+  traceRoundedRectPath(ctx, 0, 0, width, height, radius);
+  ctx.fill();
+  ctx.restore();
+}
+
 function formatDimensions(
   format: OutputFormat
 ): { baseW: number; baseH: number; isFixed: boolean; maxPadding: number } {
@@ -279,6 +327,8 @@ export type FinalizeParams = Pick<
   | 'watermarkEnabled'
   | 'watermarkColorMode'
   | 'watermarkOpacityPercent'
+  | 'roundedCorners'
+  | 'cornerRadiusPercent'
   | 'interactiveCropBounds'
 >;
 
@@ -376,7 +426,55 @@ export function finalizeWorkingCanvas(
     );
   }
 
+  // Runs last so the mask also trims whatever the watermark stage produced.
+  if (params.roundedCorners) {
+    applyRoundedCornersMask(finalCtx, targetW, targetH, params.cornerRadiusPercent);
+  }
+
   return finalCanvas;
+}
+
+/** Rec. 709 perceptual luminance weights. */
+const LUMA_R = 0.2126;
+const LUMA_G = 0.7152;
+const LUMA_B = 0.0722;
+
+/**
+ * Alpha-weighted mean luminance (0–1) of the visible artwork. Measured on a
+ * downscaled copy so the cost is constant (a few hundred pixels) regardless of
+ * the output resolution or upscale multiplier.
+ *
+ * Weighting by alpha means a faint white watermark still reports as "light",
+ * which is exactly what the preview backdrop heuristic needs.
+ * Returns null when there is nothing visible to measure.
+ */
+export function estimateArtworkLuminance(
+  canvas: HTMLCanvasElement,
+  sampleSize = 32
+): number | null {
+  if (canvas.width === 0 || canvas.height === 0) return null;
+
+  const sample = document.createElement('canvas');
+  sample.width = Math.max(1, Math.min(sampleSize, canvas.width));
+  sample.height = Math.max(1, Math.min(sampleSize, canvas.height));
+  const ctx = sample.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+
+  ctx.drawImage(canvas, 0, 0, sample.width, sample.height);
+  const { data } = ctx.getImageData(0, 0, sample.width, sample.height);
+
+  let weightedLuma = 0;
+  let alphaSum = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const a = data[i + 3];
+    if (a === 0) continue;
+    const luma = (LUMA_R * data[i] + LUMA_G * data[i + 1] + LUMA_B * data[i + 2]) / 255;
+    weightedLuma += luma * a;
+    alphaSum += a;
+  }
+
+  if (alphaSum === 0) return null;
+  return weightedLuma / alphaSum;
 }
 
 /**

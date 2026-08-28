@@ -11,13 +11,15 @@ import {
   ChevronDown,
   Copy,
   RotateCcw,
-  RefreshCw,
   Home,
   ArrowUpLeft,
   ArrowUpRight,
   ArrowDownLeft,
   ArrowDownRight,
   Square,
+  Squircle,
+  Sun,
+  Moon,
   AlertCircle,
   MessageSquareText,
 } from 'lucide-react';
@@ -116,6 +118,9 @@ Tamanho: ${WATERMARK_SIZE_LABELS[params.size]}
 Opacidade: ${params.opacityPercent}%`;
 }
 
+/** Above this alpha-weighted luminance the artwork is too light for a light backdrop. */
+const LIGHT_ARTWORK_LUMINANCE_THRESHOLD = 0.7;
+
 const DEFAULT_WATERMARK_MESSAGE = buildWatermarkMessage({
   position: 'center',
   size: 'medium',
@@ -148,6 +153,8 @@ export default function App() {
   const [removeBackground, setRemoveBackground] = useState(true);
   const [tolerance, setTolerance] = useState(15);
   const [padding, setPadding] = useState(40);
+  const [roundedCorners, setRoundedCorners] = useState(false);
+  const [cornerRadiusPercent, setCornerRadiusPercent] = useState(12);
   const [interactiveCropBounds, setInteractiveCropBounds] = useState<ContentBounds | null>(null);
   const debouncedCropForExport = useDebouncedValue(interactiveCropBounds, 120);
 
@@ -169,17 +176,30 @@ export default function App() {
   const [watermarkPosition, setWatermarkPosition] = useState<WatermarkPosition>('center');
   const [watermarkSize, setWatermarkSize] = useState<WatermarkSize>('medium');
 
-  const { processedSrc, isProcessing, cropPreview } = useImagePipeline(imageSrc, {
-    tolerance,
-    padding,
-    interactiveCropBounds: debouncedCropForExport,
-    removeBackground,
-    selectedFormat,
-    upscaleMultiplier,
-    watermarkEnabled,
-    watermarkColorMode,
-    watermarkOpacityPercent,
-  });
+  const [previewBackgroundOverride, setPreviewBackgroundOverride] = useState<
+    'light' | 'dark' | null
+  >(null);
+
+  // Favicons are tiny and already square-cropped by hosts, so rounding is noise there.
+  const roundedCornersSupported = selectedFormat !== 'favicon';
+  const roundedCornersActive = roundedCorners && roundedCornersSupported;
+
+  const { processedSrc, isProcessing, cropPreview, artworkLuminance } = useImagePipeline(
+    imageSrc,
+    {
+      tolerance,
+      padding,
+      interactiveCropBounds: debouncedCropForExport,
+      removeBackground,
+      selectedFormat,
+      upscaleMultiplier,
+      watermarkEnabled,
+      watermarkColorMode,
+      watermarkOpacityPercent,
+      roundedCorners: roundedCornersActive,
+      cornerRadiusPercent,
+    }
+  );
 
   const previewStale = useMemo(
     () => boundsKey(interactiveCropBounds) !== boundsKey(debouncedCropForExport),
@@ -283,8 +303,21 @@ export default function App() {
     backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
   };
 
-  const useDarkPreviewBackground = watermarkEnabled && watermarkColorMode === 'white';
+  // Very light artwork disappears against the light checkerboard, so the backdrop
+  // flips to dark automatically. The operator can still pin either mode.
+  const isLightArtwork =
+    artworkLuminance !== null && artworkLuminance >= LIGHT_ARTWORK_LUMINANCE_THRESHOLD;
+  const autoDarkPreviewBackground =
+    (watermarkEnabled && watermarkColorMode === 'white') || isLightArtwork;
+  const useDarkPreviewBackground =
+    previewBackgroundOverride === null
+      ? autoDarkPreviewBackground
+      : previewBackgroundOverride === 'dark';
   const previewBackgroundStyle = useDarkPreviewBackground ? checkeredStyleDark : checkeredStyleLight;
+
+  const handleTogglePreviewBackground = () => {
+    setPreviewBackgroundOverride(useDarkPreviewBackground ? 'light' : 'dark');
+  };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -334,10 +367,6 @@ export default function App() {
   const handleWatermarkMessageChange = (value: string) => {
     setWatermarkClientMessage(value);
     setWatermarkClientMessageDirty(true);
-  };
-
-  const handleCyclePropertySample = () => {
-    setPropertyIndex((i) => (i + 1) % SAMPLE_PROPERTIES.length);
   };
 
   const handleDownloadPropertyPreview = () => {
@@ -521,8 +550,59 @@ export default function App() {
                         />
                       </div>
                     )}
+
+                    {roundedCornersSupported && (
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-loft-green/65 flex items-center gap-1">
+                        <Squircle size={11} /> Cantos
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <label
+                          className={`inline-flex items-center gap-2 cursor-pointer rounded-full px-3 py-1.5 transition-colors ${
+                            roundedCorners ? 'bg-white shadow' : 'bg-loft-green/5'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5 rounded border-loft-green/30 accent-loft-orange"
+                            checked={roundedCorners}
+                            onChange={(e) => setRoundedCorners(e.target.checked)}
+                          />
+                          <span
+                            className={`text-xs font-semibold ${
+                              roundedCorners ? 'text-loft-green' : 'text-loft-green/55'
+                            }`}
+                          >
+                            Arredondar
+                          </span>
+                        </label>
+                        {roundedCorners && (
+                          <div className="flex items-center gap-1.5 w-[120px]">
+                            <input
+                              type="range"
+                              min={2}
+                              max={50}
+                              value={cornerRadiusPercent}
+                              onChange={(e) => setCornerRadiusPercent(Number(e.target.value))}
+                              className="w-full accent-loft-orange"
+                              aria-label="Raio dos cantos arredondados"
+                            />
+                            <span className="tabular-nums text-[11px] font-semibold text-loft-green/55 w-8 text-right">
+                              {cornerRadiusPercent}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    )}
                   </div>
 
+                  {roundedCornersActive && removeBackground && (
+                    <p className="text-[11px] leading-snug text-loft-green/60">
+                      Com a remoção de fundo ativa, os cantos já saem transparentes — o
+                      arredondamento aparece melhor mantendo o fundo original.
+                    </p>
+                  )}
                 </section>
 
                 <section
@@ -560,6 +640,7 @@ export default function App() {
                             cropBounds={interactiveCropBounds}
                             onCropChange={handleCropChange}
                             disabled={isProcessing}
+                            darkBackground={useDarkPreviewBackground}
                           />
                         </div>
                       </div>
@@ -582,6 +663,20 @@ export default function App() {
                           </p>
                         </div>
                         <div className="flex gap-1.5 flex-wrap justify-end">
+                          <button
+                            type="button"
+                            onClick={handleTogglePreviewBackground}
+                            title={
+                              useDarkPreviewBackground
+                                ? 'Usar fundo claro na prévia'
+                                : 'Usar fundo escuro na prévia (ajuda a enxergar logos claros)'
+                            }
+                            aria-label="Alternar fundo da prévia"
+                            className="inline-flex items-center gap-1 rounded-full border border-loft-green/20 bg-white/85 px-2 py-0.5 text-[11px] font-semibold text-loft-green shadow-sm transition-colors hover:bg-white"
+                          >
+                            {useDarkPreviewBackground ? <Sun size={12} /> : <Moon size={12} />}
+                            Fundo
+                          </button>
                           {interactiveCropBounds !== null && (
                             <span className="text-[11px] font-semibold bg-loft-mint/15 text-loft-green px-2 py-0.5 rounded-full border border-loft-mint/30">
                               Recorte manual
@@ -650,15 +745,35 @@ export default function App() {
                           Demonstrativo — o tamanho final dependerá da foto real do cliente.
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={handleCyclePropertySample}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-loft-green/15 bg-white/85 px-3 py-1.5 text-xs font-semibold text-loft-green shadow-sm transition-colors hover:bg-white"
-                        title={currentProperty.label}
-                      >
-                        <RefreshCw size={13} className="text-loft-orange" />
-                        Trocar foto ({propertyIndex + 1}/{SAMPLE_PROPERTIES.length})
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <span className="hidden text-[10px] font-bold uppercase tracking-wider text-loft-green/55 sm:inline">
+                          Foto de exemplo
+                        </span>
+                        <div className="flex gap-1.5">
+                          {SAMPLE_PROPERTIES.map((property, index) => (
+                            <button
+                              key={property.src}
+                              type="button"
+                              onClick={() => setPropertyIndex(index)}
+                              title={property.label}
+                              aria-label={property.label}
+                              aria-pressed={propertyIndex === index}
+                              className={`h-10 w-14 overflow-hidden rounded-lg border-2 transition-all ${
+                                propertyIndex === index
+                                  ? 'border-loft-orange shadow ring-2 ring-loft-orange/20'
+                                  : 'border-white/70 opacity-60 hover:border-loft-green/30 hover:opacity-100'
+                              }`}
+                            >
+                              <img
+                                src={property.src}
+                                alt=""
+                                decoding="async"
+                                className="h-full w-full object-cover"
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="flex flex-wrap items-end gap-x-5 gap-y-3 rounded-2xl border border-loft-green/10 bg-white/55 px-3 py-2.5">

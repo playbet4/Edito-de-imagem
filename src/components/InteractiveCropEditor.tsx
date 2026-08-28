@@ -105,6 +105,8 @@ export interface InteractiveCropEditorProps {
   cropBounds: ContentBounds | null;
   onCropChange: (bounds: ContentBounds | null) => void;
   disabled?: boolean;
+  /** Dark checkerboard backdrop, for light artwork that vanishes on the light one. */
+  darkBackground?: boolean;
 }
 
 export function InteractiveCropEditor({
@@ -115,6 +117,7 @@ export function InteractiveCropEditor({
   cropBounds,
   onCropChange,
   disabled,
+  darkBackground,
 }: InteractiveCropEditorProps) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -267,21 +270,27 @@ export function InteractiveCropEditor({
   const cw = img?.clientWidth ?? 0;
   const ch = img?.clientHeight ?? 0;
 
+  const checkerColor = darkBackground ? '#1e293b' : '#e5e7eb';
+
   return (
     <div>
       <div
-        className="rounded-2xl border border-loft-green/10 shadow-inner overflow-hidden bg-slate-100/50 h-[280px] flex items-center justify-center"
+        className={`rounded-2xl border border-loft-green/10 shadow-inner overflow-hidden h-[280px] flex items-center justify-center ${
+          darkBackground ? 'bg-slate-900' : 'bg-slate-100/50'
+        }`}
         style={{
-          backgroundImage: `linear-gradient(45deg, #e5e7eb 25%, transparent 25%),
-            linear-gradient(-45deg, #e5e7eb 25%, transparent 25%),
-            linear-gradient(45deg, transparent 75%, #e5e7eb 75%),
-            linear-gradient(-45deg, transparent 75%, #e5e7eb 75%)`,
+          backgroundImage: `linear-gradient(45deg, ${checkerColor} 25%, transparent 25%),
+            linear-gradient(-45deg, ${checkerColor} 25%, transparent 25%),
+            linear-gradient(45deg, transparent 75%, ${checkerColor} 75%),
+            linear-gradient(-45deg, transparent 75%, ${checkerColor} 75%)`,
           backgroundSize: '16px 16px',
           backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0',
         }}
       >
         {!autoBounds ? (
-          <div className="text-center text-sm text-loft-green/70">
+          <div
+            className={`text-center text-sm ${darkBackground ? 'text-white/70' : 'text-loft-green/70'}`}
+          >
             Nenhum conteúdo visível para recortar.
           </div>
         ) : (

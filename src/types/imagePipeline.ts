@@ -21,6 +21,10 @@ export interface ImagePipelineParams {
   watermarkColorMode: WatermarkColorMode;
   /** 10–100; scales alpha of non-transparent pixels after optional white fill. */
   watermarkOpacityPercent: number;
+  /** When true, the exported PNG is masked to a rounded rectangle. */
+  roundedCorners: boolean;
+  /** 0–50; corner radius as a percentage of the smaller output dimension (50 = pill/circle). */
+  cornerRadiusPercent: number;
   /**
    * When null, crop uses automatic content bounds. When set, this rectangle (image pixels, inclusive
    * min/max indices) replaces the auto crop — must match the working canvas size after background removal.

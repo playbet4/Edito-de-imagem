@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import {
   buildWorkingCanvas,
+  estimateArtworkLuminance,
   finalizeWorkingCanvas,
 } from '../lib/imagePipeline';
 import type {
@@ -20,6 +21,8 @@ interface UseImagePipelineOptions {
   watermarkEnabled: boolean;
   watermarkColorMode: WatermarkColorMode;
   watermarkOpacityPercent: number;
+  roundedCorners: boolean;
+  cornerRadiusPercent: number;
 }
 
 interface WorkingState {
@@ -39,6 +42,8 @@ interface UseImagePipelineResult {
   processedSrc: string | null;
   isProcessing: boolean;
   cropPreview: PreparedCropPreview | null;
+  /** Alpha-weighted mean luminance (0–1) of the exported artwork, or null when empty. */
+  artworkLuminance: number | null;
 }
 
 /**
@@ -55,6 +60,7 @@ export function useImagePipeline(
   const debouncedTolerance = useDebouncedValue(options.tolerance, 200);
   const debouncedPadding = useDebouncedValue(options.padding, 200);
   const debouncedOpacity = useDebouncedValue(options.watermarkOpacityPercent, 120);
+  const debouncedCornerRadius = useDebouncedValue(options.cornerRadiusPercent, 120);
 
   const {
     interactiveCropBounds,
@@ -63,11 +69,13 @@ export function useImagePipeline(
     upscaleMultiplier,
     watermarkEnabled,
     watermarkColorMode,
+    roundedCorners,
   } = options;
 
   const [workingState, setWorkingState] = useState<WorkingState | null>(null);
   const [processedSrc, setProcessedSrc] = useState<string | null>(null);
   const [cropPreview, setCropPreview] = useState<PreparedCropPreview | null>(null);
+  const [artworkLuminance, setArtworkLuminance] = useState<number | null>(null);
   const [isHeavyProcessing, setIsHeavyProcessing] = useState(false);
 
   const decodedImageRef = useRef<{ src: string; image: HTMLImageElement } | null>(null);
@@ -177,6 +185,7 @@ export function useImagePipeline(
     if (!workingState) {
       replaceUrl(finalUrlRef, null);
       setProcessedSrc(null);
+      setArtworkLuminance(null);
       return;
     }
     let cancelled = false;
@@ -187,13 +196,17 @@ export function useImagePipeline(
       watermarkEnabled,
       watermarkColorMode,
       watermarkOpacityPercent: debouncedOpacity,
+      roundedCorners,
+      cornerRadiusPercent: debouncedCornerRadius,
       interactiveCropBounds,
     });
     if (!finalCanvas) {
       replaceUrl(finalUrlRef, null);
       setProcessedSrc(null);
+      setArtworkLuminance(null);
       return;
     }
+    setArtworkLuminance(estimateArtworkLuminance(finalCanvas));
     finalCanvas.toBlob((blob) => {
       if (cancelled || !blob) return;
       const url = URL.createObjectURL(blob);
@@ -212,8 +225,10 @@ export function useImagePipeline(
     watermarkEnabled,
     watermarkColorMode,
     debouncedOpacity,
+    roundedCorners,
+    debouncedCornerRadius,
     cropKey,
   ]);
 
-  return { processedSrc, isProcessing: isHeavyProcessing, cropPreview };
+  return { processedSrc, isProcessing: isHeavyProcessing, cropPreview, artworkLuminance };
 }
