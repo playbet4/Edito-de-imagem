@@ -44,6 +44,15 @@ function boundsKey(b: ContentBounds | null): string {
   return `${b.minX},${b.minY},${b.maxX},${b.maxY}`;
 }
 
+/**
+ * Chrome can treat a range thumb drag as a text-selection drag after the
+ * control gets invisibly selected, which freezes the thumb and shows the
+ * not-allowed cursor. Clearing the selection on mousedown restores dragging.
+ */
+function clearTextSelection() {
+  window.getSelection()?.removeAllRanges();
+}
+
 function scrollToId(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -152,7 +161,7 @@ export default function App() {
 
   const [removeBackground, setRemoveBackground] = useState(true);
   const [tolerance, setTolerance] = useState(15);
-  const [padding, setPadding] = useState(40);
+  const [padding, setPadding] = useState(0);
   const [roundedCorners, setRoundedCorners] = useState(false);
   const [cornerRadiusPercent, setCornerRadiusPercent] = useState(12);
   const [interactiveCropBounds, setInteractiveCropBounds] = useState<ContentBounds | null>(null);
@@ -546,6 +555,8 @@ export default function App() {
                           max={150}
                           value={padding}
                           onChange={(e) => setPadding(Number(e.target.value))}
+                          onMouseDown={clearTextSelection}
+                          onDragStart={(e) => e.preventDefault()}
                           className="w-full accent-loft-orange"
                         />
                       </div>
@@ -584,6 +595,8 @@ export default function App() {
                               max={50}
                               value={cornerRadiusPercent}
                               onChange={(e) => setCornerRadiusPercent(Number(e.target.value))}
+                              onMouseDown={clearTextSelection}
+                              onDragStart={(e) => e.preventDefault()}
                               className="w-full accent-loft-orange"
                               aria-label="Raio dos cantos arredondados"
                             />
@@ -923,6 +936,8 @@ export default function App() {
                           max={150}
                           value={tolerance}
                           onChange={(e) => setTolerance(Number(e.target.value))}
+                          onMouseDown={clearTextSelection}
+                          onDragStart={(e) => e.preventDefault()}
                           className="w-full accent-loft-orange"
                         />
                         <p className="text-xs leading-relaxed text-loft-green/65">
@@ -994,6 +1009,8 @@ export default function App() {
                             max={100}
                             value={watermarkOpacityPercent}
                             onChange={(e) => setWatermarkOpacityPercent(Number(e.target.value))}
+                            onMouseDown={clearTextSelection}
+                            onDragStart={(e) => e.preventDefault()}
                             className="w-full accent-loft-orange"
                           />
                         </div>

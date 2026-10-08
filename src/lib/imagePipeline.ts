@@ -263,20 +263,31 @@ function traceRoundedRectPath(
   ctx.closePath();
 }
 
+export interface RoundedCornerRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /**
- * Clips the canvas to a rounded rectangle using `destination-in`, which keeps
- * the existing pixels only inside the path. Single native path fill — no
- * per-pixel work, so it stays in the cheap light stage.
+ * Clips artwork to a rounded rectangle using `destination-in`. Applied to the
+ * drawn content rect (not necessarily the full canvas) so letterboxed fixed
+ * formats like Relatório / Logo ADM round the logo itself instead of the empty
+ * transparent margins around it.
  *
- * The radius is relative to the smaller side, so it scales consistently across
- * output formats and upscale multipliers.
+ * Radius is a percentage of the content rect's smaller side, so it stays
+ * proportional across formats and upscale multipliers. Single native path
+ * fill — no per-pixel work.
  */
 export function applyRoundedCornersMask(
   ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  radiusPercent: number
+  radiusPercent: number,
+  contentRect: RoundedCornerRect
 ): void {
+  const { x, y, width, height } = contentRect;
+  if (width <= 0 || height <= 0) return;
+
   const clampedPercent = Math.min(50, Math.max(0, radiusPercent));
   const radius = (Math.min(width, height) * clampedPercent) / 100;
   if (radius <= 0) return;
@@ -284,7 +295,7 @@ export function applyRoundedCornersMask(
   ctx.save();
   ctx.globalCompositeOperation = 'destination-in';
   ctx.fillStyle = '#000000';
-  traceRoundedRectPath(ctx, 0, 0, width, height, radius);
+  traceRoundedRectPath(ctx, x, y, width, height, radius);
   ctx.fill();
   ctx.restore();
 }
@@ -380,6 +391,11 @@ export function finalizeWorkingCanvas(
   finalCtx.imageSmoothingEnabled = true;
   finalCtx.imageSmoothingQuality = 'high';
 
+  // Destination rect of the artwork on the output canvas. Rounded corners are
+  // applied to this rect so letterboxed formats (Relatório, Logo ADM) round the
+  // logo itself instead of the empty transparent canvas margins.
+  let contentRect: RoundedCornerRect;
+
   if (isFixed) {
     const availW = targetW - currentPadding * 2 * u;
     const availH = targetH - currentPadding * 2 * u;
@@ -399,6 +415,7 @@ export function finalizeWorkingCanvas(
       drawW,
       drawH
     );
+    contentRect = { x: drawX, y: drawY, width: drawW, height: drawH };
   } else {
     const drawW = cropW * u;
     const drawH = cropH * u;
@@ -414,6 +431,7 @@ export function finalizeWorkingCanvas(
       drawW,
       drawH
     );
+    contentRect = { x: p, y: p, width: drawW, height: drawH };
   }
 
   if (params.watermarkEnabled) {
@@ -428,7 +446,7 @@ export function finalizeWorkingCanvas(
 
   // Runs last so the mask also trims whatever the watermark stage produced.
   if (params.roundedCorners) {
-    applyRoundedCornersMask(finalCtx, targetW, targetH, params.cornerRadiusPercent);
+    applyRoundedCornersMask(finalCtx, params.cornerRadiusPercent, contentRect);
   }
 
   return finalCanvas;
