@@ -169,7 +169,8 @@ export default function App() {
 
   const [watermarkEnabled, setWatermarkEnabled] = useState(false);
   const [watermarkColorMode, setWatermarkColorMode] = useState<WatermarkColorMode>('original');
-  const [watermarkOpacityPercent, setWatermarkOpacityPercent] = useState(40);
+  const [watermarkOpacityPercent, setWatermarkOpacityPercent] = useState(100);
+  const [liquidGlassOpacityPercent, setLiquidGlassOpacityPercent] = useState(100);
 
   const [selectedFormat, setSelectedFormat] = useState<OutputFormat>('custom');
   const [upscaleMultiplier, setUpscaleMultiplier] = useState(1);
@@ -205,6 +206,7 @@ export default function App() {
       watermarkEnabled,
       watermarkColorMode,
       watermarkOpacityPercent,
+      liquidGlassOpacityPercent,
       roundedCorners: roundedCornersActive,
       cornerRadiusPercent,
     }
@@ -317,7 +319,9 @@ export default function App() {
   const isLightArtwork =
     artworkLuminance !== null && artworkLuminance >= LIGHT_ARTWORK_LUMINANCE_THRESHOLD;
   const autoDarkPreviewBackground =
-    (watermarkEnabled && watermarkColorMode === 'white') || isLightArtwork;
+    (watermarkEnabled &&
+      (watermarkColorMode === 'white' || watermarkColorMode === 'liquidGlass')) ||
+    isLightArtwork;
   const useDarkPreviewBackground =
     previewBackgroundOverride === null
       ? autoDarkPreviewBackground
@@ -698,6 +702,9 @@ export default function App() {
                           {watermarkEnabled && (
                             <span className="text-[11px] font-semibold bg-loft-orange/15 text-loft-green px-2 py-0.5 rounded-full border border-loft-orange/25">
                               Marca d&apos;água {watermarkOpacityPercent}%
+                              {watermarkColorMode === 'liquidGlass'
+                                ? ` · vidro ${liquidGlassOpacityPercent}%`
+                                : ''}
                             </span>
                           )}
                           {upscaleMultiplier > 1 && (
@@ -977,31 +984,51 @@ export default function App() {
                       <span className="text-sm font-semibold text-loft-green">Exportar como marca d&apos;água</span>
                     </label>
                     <p className="text-xs leading-relaxed text-loft-green/65">
-                      Quando ativo, o PNG sai mais suave: você pode forçar branco e aplicar opacidade no canal alpha da
-                      arte inteira.
+                      Quando ativo, o PNG sai como marca d&apos;água: branco, cores originais ou
+                      vidro líquido (efeito transparente com brilho), com opacidade ajustável.
                     </p>
                     {watermarkEnabled && (
                       <div className="space-y-4 rounded-2xl border border-loft-orange/20 bg-white/60 p-4">
-                        <div className="grid grid-cols-2 gap-2 rounded-full bg-loft-green/5 p-1">
+                        <div className="grid grid-cols-3 gap-1 rounded-2xl bg-loft-green/5 p-1">
                           <button
                             type="button"
                             onClick={() => setWatermarkColorMode('white')}
-                            className={`rounded-full py-2.5 text-xs font-semibold transition-all ${watermarkColorMode === 'white' ? 'bg-white text-loft-green shadow' : 'text-loft-green/55'}`}
+                            className={`rounded-full py-2.5 px-1 text-[11px] font-semibold transition-all ${watermarkColorMode === 'white' ? 'bg-white text-loft-green shadow' : 'text-loft-green/55'}`}
                           >
                             Tudo branco
                           </button>
                           <button
                             type="button"
                             onClick={() => setWatermarkColorMode('original')}
-                            className={`rounded-full py-2.5 text-xs font-semibold transition-all ${watermarkColorMode === 'original' ? 'bg-white text-loft-green shadow' : 'text-loft-green/55'}`}
+                            className={`rounded-full py-2.5 px-1 text-[11px] font-semibold transition-all ${watermarkColorMode === 'original' ? 'bg-white text-loft-green shadow' : 'text-loft-green/55'}`}
                           >
-                            Cores originais
+                            Originais
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWatermarkColorMode('liquidGlass')}
+                            className={`rounded-full py-2.5 px-1 text-[11px] font-semibold transition-all ${watermarkColorMode === 'liquidGlass' ? 'bg-white text-loft-green shadow' : 'text-loft-green/55'}`}
+                            title="Efeito de vidro líquido transparente com brilho"
+                          >
+                            Vidro líquido
                           </button>
                         </div>
+                        {watermarkColorMode === 'liquidGlass' && (
+                          <p className="text-[11px] leading-snug text-loft-green/65">
+                            Marca = visibilidade da logo. Vidro = borda + brilho (0% = sem
+                            efeito de vidro; 100% = filete e brilho no máximo).
+                          </p>
+                        )}
                         <div className="space-y-2">
                           <div className="flex justify-between text-sm">
-                            <span className="text-loft-green/80">Opacidade</span>
-                            <span className="tabular-nums text-loft-green/50">{watermarkOpacityPercent}%</span>
+                            <span className="text-loft-green/80">
+                              {watermarkColorMode === 'liquidGlass'
+                                ? 'Opacidade da marca'
+                                : 'Opacidade'}
+                            </span>
+                            <span className="tabular-nums text-loft-green/50">
+                              {watermarkOpacityPercent}%
+                            </span>
                           </div>
                           <input
                             type="range"
@@ -1014,6 +1041,28 @@ export default function App() {
                             className="w-full accent-loft-orange"
                           />
                         </div>
+                        {watermarkColorMode === 'liquidGlass' && (
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-loft-green/80">Opacidade do vidro</span>
+                              <span className="tabular-nums text-loft-green/50">
+                                {liquidGlassOpacityPercent}%
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              value={liquidGlassOpacityPercent}
+                              onChange={(e) =>
+                                setLiquidGlassOpacityPercent(Number(e.target.value))
+                              }
+                              onMouseDown={clearTextSelection}
+                              onDragStart={(e) => e.preventDefault()}
+                              className="w-full accent-loft-orange"
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

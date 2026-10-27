@@ -1,6 +1,6 @@
 export type OutputFormat = 'custom' | 'relatorio' | 'logoAdm' | 'site' | 'favicon';
 
-export type WatermarkColorMode = 'white' | 'original';
+export type WatermarkColorMode = 'white' | 'original' | 'liquidGlass';
 
 export type WatermarkPosition =
   | 'top-left'
@@ -19,8 +19,13 @@ export interface ImagePipelineParams {
   upscaleMultiplier: number;
   watermarkEnabled: boolean;
   watermarkColorMode: WatermarkColorMode;
-  /** 10–100; scales alpha of non-transparent pixels after optional white fill. */
+  /** 10–100; uniform visibility of the watermark body (whole silhouette). */
   watermarkOpacityPercent: number;
+  /**
+   * 0–100; liquid-glass only — intensity of rim, gloss and edge light.
+   * 0 = flat mark (body only); 100 = full glass. Ignored for white/original.
+   */
+  liquidGlassOpacityPercent: number;
   /** When true, the exported PNG is masked to a rounded rectangle. */
   roundedCorners: boolean;
   /** 0–50; corner radius as a percentage of the smaller output dimension (50 = pill/circle). */

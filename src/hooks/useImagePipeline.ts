@@ -21,6 +21,7 @@ interface UseImagePipelineOptions {
   watermarkEnabled: boolean;
   watermarkColorMode: WatermarkColorMode;
   watermarkOpacityPercent: number;
+  liquidGlassOpacityPercent: number;
   roundedCorners: boolean;
   cornerRadiusPercent: number;
 }
@@ -60,6 +61,7 @@ export function useImagePipeline(
   const debouncedTolerance = useDebouncedValue(options.tolerance, 200);
   const debouncedPadding = useDebouncedValue(options.padding, 200);
   const debouncedOpacity = useDebouncedValue(options.watermarkOpacityPercent, 120);
+  const debouncedGlassOpacity = useDebouncedValue(options.liquidGlassOpacityPercent, 120);
   const debouncedCornerRadius = useDebouncedValue(options.cornerRadiusPercent, 120);
 
   const {
@@ -196,6 +198,7 @@ export function useImagePipeline(
       watermarkEnabled,
       watermarkColorMode,
       watermarkOpacityPercent: debouncedOpacity,
+      liquidGlassOpacityPercent: debouncedGlassOpacity,
       roundedCorners,
       cornerRadiusPercent: debouncedCornerRadius,
       interactiveCropBounds,
@@ -225,6 +228,7 @@ export function useImagePipeline(
     watermarkEnabled,
     watermarkColorMode,
     debouncedOpacity,
+    debouncedGlassOpacity,
     roundedCorners,
     debouncedCornerRadius,
     cropKey,
