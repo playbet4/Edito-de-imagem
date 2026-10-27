@@ -22,8 +22,8 @@ export interface ImagePipelineParams {
   /** 10–100; uniform visibility of the watermark body (whole silhouette). */
   watermarkOpacityPercent: number;
   /**
-   * 0–100; liquid-glass only — intensity of rim, gloss and edge light.
-   * 0 = flat mark (body only); 100 = full glass. Ignored for white/original.
+   * 0–100; liquid-glass only — uniform interior fill (not the rim).
+   * 0 = hollow glass (photo shows through); 100 = frosted core. Ignored otherwise.
    */
   liquidGlassOpacityPercent: number;
   /** When true, the exported PNG is masked to a rounded rectangle. */

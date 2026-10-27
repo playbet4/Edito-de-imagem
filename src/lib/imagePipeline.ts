@@ -280,153 +280,149 @@ function tintMask(
 }
 
 /**
- * Soft gloss accents (center + a few corners) drawn with `lighter` on top of a
- * uniform body — never used as the only source of visibility.
- */
-function createSpecularSparks(
-  mask: HTMLCanvasElement,
-  width: number,
-  height: number
-): HTMLCanvasElement {
-  const out = createCanvas(width, height);
-  const octx = out.getContext('2d');
-  if (!octx) return out;
-
-  const maxDim = Math.max(width, height);
-  const paintSpot = (cx: number, cy: number, radius: number, peak: number): void => {
-    const g = octx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-    g.addColorStop(0, `rgba(255, 255, 255, ${peak})`);
-    g.addColorStop(0.35, `rgba(255, 255, 255, ${peak * 0.4})`);
-    g.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    octx.fillStyle = g;
-    octx.fillRect(0, 0, width, height);
-  };
-
-  octx.globalCompositeOperation = 'lighter';
-  paintSpot(width * 0.4, height * 0.34, maxDim * 0.26, 1);
-  paintSpot(width * 0.18, height * 0.14, maxDim * 0.1, 1);
-  paintSpot(width * 0.72, height * 0.2, maxDim * 0.09, 0.9);
-  paintSpot(width * 0.55, height * 0.65, maxDim * 0.08, 0.7);
-  paintSpot(width * 0.3, height * 0.72, maxDim * 0.07, 0.55);
-
-  octx.globalCompositeOperation = 'destination-in';
-  octx.drawImage(mask, 0, 0);
-  return out;
-}
-
-/**
  * Liquid glass with two independent gains:
- * - bodyGain → uniform fill across the whole silhouette (marca d'água)
- * - glassGain → rim, edge light and gloss (efeito vidro)
+ * - markGain → strength of the outline around the logo (not a filled silhouette)
+ * - glassGain → uniform interior fill only
  *
- * Glass slider is remapped so 0% = flat mark (no rim/shine) and 100% = full
- * glass look — the previous linear 10–100 range barely changed what you saw.
+ * Border = thin ring OUTSIDE / on the contour. Never widen an inner ring enough
+ * to paint the whole glyph gray (that happened when glass hit 0% before).
+ * When glass drops, we only boost outline opacity a little — not fill the letter.
  */
 function applyLiquidGlassLook(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  bodyGain: number,
+  markGain: number,
   glassGain: number
 ): void {
   const mask = createAlphaMask(ctx.canvas, width, height);
   const minSide = Math.min(width, height);
-  // Wider rim at high glass so the slider change is obvious
-  const rimBlur = Math.max(0.8, Math.min(2.2, minSide * 0.007 * (0.7 + glassGain * 0.6)));
-  const hiBlur = Math.max(1.1, Math.min(2.8, minSide * 0.009));
-  const shadowBlur = Math.max(2.4, Math.min(7, minSide * 0.024));
-  const lift = Math.max(1, Math.min(4, Math.round(minSide * 0.006)));
-  const crispRim = createEdgeRing(mask, width, height, rimBlur, false);
-  const softRim = createEdgeRing(mask, width, height, rimBlur * 1.7, false);
-  const hiBand = createEdgeRing(mask, width, height, hiBlur, false);
 
-  // 0 → none, 1 → full glass. Keep a hair of effect only above ~5%.
-  const g = Math.max(0, Math.min(1, glassGain));
-  const gCurve = g * g; // ease-in: low values almost flat, high values punchy
+  const mark = Math.max(0, Math.min(1, markGain));
+  const glass = Math.max(0, Math.min(1, glassGain));
+  const hollow = 1 - glass;
+  // Opacity boost when hollow — stroke stays a contour, not a filled glyph
+  const edgeBoost = 1 + hollow * 0.35;
+
+  // Slightly bolder outer stroke (“leve negrito”), still outside the fill
+  const outerBlur = Math.max(1.05, Math.min(2.1, minSide * 0.0068));
+  const boldOuterBlur = Math.max(1.35, Math.min(2.6, minSide * 0.0085));
+  const hairBlur = Math.max(0.55, Math.min(1.15, minSide * 0.0038));
+  const bevelBlur = Math.max(0.7, Math.min(1.35, minSide * 0.0045));
+  const lift = Math.max(1, Math.min(2, Math.round(minSide * 0.0045)));
+
+  const outerContour = createEdgeRing(mask, width, height, outerBlur, true);
+  const boldOuter = createEdgeRing(mask, width, height, boldOuterBlur, true);
+  const hairline = createEdgeRing(mask, width, height, hairBlur, false);
+  const bevelBand = createEdgeRing(mask, width, height, bevelBlur, false);
 
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, width, height);
 
-  // 1) Soft contact shadow (mostly follows the mark body)
-  const contact = createCanvas(width, height);
-  const cctx = contact.getContext('2d');
-  if (cctx) {
-    cctx.filter = `blur(${shadowBlur}px)`;
-    cctx.drawImage(mask, 0, 0);
-    cctx.filter = 'none';
-    cctx.globalCompositeOperation = 'source-in';
-    cctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-    cctx.fillRect(0, 0, width, height);
-    ctx.globalAlpha = 0.2 * bodyGain + 0.12 * g;
-    ctx.drawImage(contact, lift * 0.45, Math.max(1.5, lift + 1));
+  // 1) Dark contact shade — outer ring only (liquid-glass depth, not a gray fill)
+  const shadowRing = createCanvas(width, height);
+  const sctx = shadowRing.getContext('2d');
+  if (sctx) {
+    const softOuter = createEdgeRing(
+      mask,
+      width,
+      height,
+      Math.max(2.2, Math.min(5, minSide * 0.02)),
+      true
+    );
+    sctx.drawImage(softOuter, 0, 0);
+    sctx.globalCompositeOperation = 'source-in';
+    sctx.fillStyle = 'rgba(0, 0, 0, 0.78)';
+    sctx.fillRect(0, 0, width, height);
+    ctx.globalAlpha = Math.min(0.48, 0.32 * mark * edgeBoost);
+    ctx.drawImage(shadowRing, lift * 0.5, Math.max(1.2, lift + 0.5));
     ctx.globalAlpha = 1;
   }
 
-  // 2) Uniform body — marca opacity only
-  const body = createCanvas(width, height);
-  const bctx = body.getContext('2d');
-  if (bctx) {
-    bctx.fillStyle = 'rgba(255, 255, 255, 0.58)';
-    bctx.fillRect(0, 0, width, height);
-    bctx.globalCompositeOperation = 'destination-in';
-    bctx.drawImage(mask, 0, 0);
-    ctx.globalAlpha = bodyGain;
-    ctx.drawImage(body, 0, 0);
+  // Tight dark lip just outside the stroke (reads as glass thickness)
+  const darkLip = createCanvas(width, height);
+  const dctx = darkLip.getContext('2d');
+  if (dctx) {
+    dctx.drawImage(boldOuter, 0, 0);
+    dctx.globalCompositeOperation = 'source-in';
+    dctx.fillStyle = 'rgba(15, 20, 28, 0.9)';
+    dctx.fillRect(0, 0, width, height);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = Math.min(0.4, 0.28 * mark * edgeBoost);
+    ctx.drawImage(darkLip, lift * 0.25, Math.max(0.8, lift * 0.6));
     ctx.globalAlpha = 1;
   }
 
-  if (g > 0.02) {
-    // 3) Soft outer glow rim (glass) + crisp inner filete
-    const softRimLayer = createCanvas(width, height);
-    const softCtx = softRimLayer.getContext('2d');
-    if (softCtx) {
-      softCtx.drawImage(softRim, 0, 0);
-      softCtx.globalCompositeOperation = 'source-in';
-      softCtx.fillStyle = 'rgba(255, 255, 255, 1)';
-      softCtx.fillRect(0, 0, width, height);
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.55 * g;
-      ctx.drawImage(softRimLayer, 0, 0);
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = 'source-over';
-    }
-
-    const rimLayer = createCanvas(width, height);
-    const rimCtx = rimLayer.getContext('2d');
-    if (rimCtx) {
-      rimCtx.drawImage(crispRim, 0, 0);
-      rimCtx.globalCompositeOperation = 'source-in';
-      rimCtx.fillStyle = 'rgba(255, 255, 255, 1)';
-      rimCtx.fillRect(0, 0, width, height);
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = Math.min(1, 1.15 * g);
-      ctx.drawImage(rimLayer, 0, 0);
+  // 2) Uniform interior fill — glass only; empty when glass = 0
+  if (glass > 0.01) {
+    const body = createCanvas(width, height);
+    const bctx = body.getContext('2d');
+    if (bctx) {
+      bctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+      bctx.fillRect(0, 0, width, height);
+      bctx.globalCompositeOperation = 'destination-in';
+      bctx.drawImage(mask, 0, 0);
+      ctx.globalAlpha = glass * mark;
+      ctx.drawImage(body, 0, 0);
       ctx.globalAlpha = 1;
     }
+  }
 
-    // 4) Top-left edge catch — stronger at high glass
-    const hi = tintMask(mask, width, height, 'rgba(255, 255, 255, 1)');
-    const hiLayer = createCanvas(width, height);
-    const hiCtx = hiLayer.getContext('2d');
-    if (hiCtx) {
-      hiCtx.drawImage(hi, -lift, -lift);
-      hiCtx.globalCompositeOperation = 'destination-in';
-      hiCtx.drawImage(mask, 0, 0);
-      hiCtx.globalCompositeOperation = 'destination-in';
-      hiCtx.drawImage(hiBand, 0, 0);
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.95 * g;
-      ctx.drawImage(hiLayer, 0, 0);
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = 'source-over';
-    }
+  // 3) White contour — soft under-stroke + brighter filete (leve negrito)
+  const boldWhite = createCanvas(width, height);
+  const bwCtx = boldWhite.getContext('2d');
+  if (bwCtx) {
+    bwCtx.drawImage(boldOuter, 0, 0);
+    bwCtx.globalCompositeOperation = 'source-in';
+    bwCtx.fillStyle = 'rgba(255, 255, 255, 1)';
+    bwCtx.fillRect(0, 0, width, height);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = Math.min(0.7, 0.48 * mark * edgeBoost);
+    ctx.drawImage(boldWhite, 0, 0);
+    ctx.globalAlpha = 1;
+  }
 
-    // 5) Gloss sparks — punchy at 100%, nearly gone at low glass
-    const sparks = createSpecularSparks(mask, width, height);
+  const outerLayer = createCanvas(width, height);
+  const octx = outerLayer.getContext('2d');
+  if (octx) {
+    octx.drawImage(outerContour, 0, 0);
+    octx.globalCompositeOperation = 'source-in';
+    octx.fillStyle = 'rgba(255, 255, 255, 1)';
+    octx.fillRect(0, 0, width, height);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = Math.min(1, 0.95 * mark * edgeBoost);
+    ctx.drawImage(outerLayer, 0, 0);
+    ctx.globalAlpha = 1;
+  }
+
+  // 4) Inner hairline — brighter lip
+  const hairLayer = createCanvas(width, height);
+  const hctx = hairLayer.getContext('2d');
+  if (hctx) {
+    hctx.drawImage(hairline, 0, 0);
+    hctx.globalCompositeOperation = 'source-in';
+    hctx.fillStyle = 'rgba(255, 255, 255, 1)';
+    hctx.fillRect(0, 0, width, height);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = Math.min(0.95, 0.78 * mark * edgeBoost);
+    ctx.drawImage(hairLayer, 0, 0);
+    ctx.globalAlpha = 1;
+  }
+
+  // 5) Specular catch on the lip
+  const hi = tintMask(mask, width, height, 'rgba(255, 255, 255, 1)');
+  const hiLayer = createCanvas(width, height);
+  const hiCtx = hiLayer.getContext('2d');
+  if (hiCtx) {
+    hiCtx.drawImage(hi, -lift, -lift);
+    hiCtx.globalCompositeOperation = 'destination-in';
+    hiCtx.drawImage(mask, 0, 0);
+    hiCtx.globalCompositeOperation = 'destination-in';
+    hiCtx.drawImage(bevelBand, 0, 0);
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = Math.min(1, 1.05 * gCurve + 0.25 * g);
-    ctx.drawImage(sparks, 0, 0);
+    ctx.globalAlpha = Math.min(0.85, 0.58 * mark * edgeBoost);
+    ctx.drawImage(hiLayer, 0, 0);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -440,7 +436,7 @@ function applyLiquidGlassLook(
  * canvases) by relying on the GPU/native canvas pipeline.
  *
  * - White → `source-atop` opaque white, preserving destination alpha.
- * - Liquid glass → uniform body (watermark opacity) + rim/shine (glass opacity).
+ * - Liquid glass → uniform interior (glass opacity) + 3D rim (mark opacity).
  * - Opacity → linear `destination-in` for white/original.
  */
 export function applyWatermarkComposite(
@@ -453,7 +449,6 @@ export function applyWatermarkComposite(
 ): void {
   const clamped = Math.min(100, Math.max(10, opacityPercent));
   const factor = clamped / 100;
-  // Glass may go to 0 so “opacidade do vidro” can fully turn the effect off.
   const glassClamped = Math.min(100, Math.max(0, liquidGlassOpacityPercent));
   const glassFactor = glassClamped / 100;
 

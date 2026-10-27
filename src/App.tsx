@@ -1015,8 +1015,8 @@ export default function App() {
                         </div>
                         {watermarkColorMode === 'liquidGlass' && (
                           <p className="text-[11px] leading-snug text-loft-green/65">
-                            Marca = visibilidade da logo. Vidro = borda + brilho (0% = sem
-                            efeito de vidro; 100% = filete e brilho no máximo).
+                            Marca = força do contorno em volta da logo. Vidro = miolo
+                            uniforme (0% = oco com filete; sem transformar a letra em cinza).
                           </p>
                         )}
                         <div className="space-y-2">
