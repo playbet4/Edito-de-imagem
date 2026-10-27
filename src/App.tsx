@@ -223,21 +223,14 @@ export default function App() {
 
   const isPropertyPreviewSupportedFormat =
     selectedFormat === 'custom' || selectedFormat === 'site';
-  const showPropertyPreview =
-    watermarkEnabled && isPropertyPreviewSupportedFormat && removeBackground;
-  const propertyPreviewBlockedReason: 'format' | 'background' | null = watermarkEnabled
-    ? !removeBackground
-      ? 'background'
-      : !isPropertyPreviewSupportedFormat
-        ? 'format'
-        : null
-    : null;
+  // Logos that already have transparency must work without "Remover fundo".
+  const showPropertyPreview = watermarkEnabled && isPropertyPreviewSupportedFormat;
+  const propertyPreviewBlockedReason: 'format' | null =
+    watermarkEnabled && !isPropertyPreviewSupportedFormat ? 'format' : null;
   const propertyPreviewBlockedTooltip =
-    propertyPreviewBlockedReason === 'background'
-      ? "A prévia em foto de imóvel só aparece com 'Remover fundo' ativado."
-      : propertyPreviewBlockedReason === 'format'
-        ? 'A prévia em foto de imóvel é exibida apenas para os formatos Livre e Site.'
-        : null;
+    propertyPreviewBlockedReason === 'format'
+      ? 'A prévia em foto de imóvel é exibida apenas para os formatos Livre e Site.'
+      : null;
 
   const { previewSrc: propertyPreviewSrc, isComposing: isComposingPropertyPreview } =
     useWatermarkPreview({
@@ -1145,7 +1138,7 @@ export default function App() {
                         <p className="text-[11px] leading-snug text-loft-green/65 px-0.5">
                           {showPropertyPreview
                             ? 'Marca d\u2019água sobre foto de exemplo — não é o arquivo final.'
-                            : 'Disponível apenas nos formatos Livre e Site, com remoção de fundo ativa.'}
+                            : 'Disponível apenas nos formatos Livre e Site (com ou sem remover fundo).'}
                         </p>
                       </div>
                     </div>
