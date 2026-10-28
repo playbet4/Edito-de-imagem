@@ -25,8 +25,11 @@ import {
 } from 'lucide-react';
 import { useImagePipeline } from './hooks/useImagePipeline';
 import { useDebouncedValue } from './hooks/useDebouncedValue';
+import { useEditHistory } from './hooks/useEditHistory';
 import { useWatermarkPreview } from './hooks/useWatermarkPreview';
+import { HistorySidebar } from './components/HistorySidebar';
 import { InteractiveCropEditor } from './components/InteractiveCropEditor';
+import type { EditHistorySettings } from './types/editHistory';
 import type {
   ContentBounds,
   OutputFormat,
@@ -189,6 +192,97 @@ export default function App() {
   const [previewBackgroundOverride, setPreviewBackgroundOverride] = useState<
     'light' | 'dark' | null
   >(null);
+  const [historyMobileOpen, setHistoryMobileOpen] = useState(false);
+  const ownedImageUrlRef = useRef<string | null>(null);
+  const skipHistoryUpsertRef = useRef(false);
+  const sourceFileNameRef = useRef<string | null>(null);
+
+  const {
+    filteredItems: historyItems,
+    filterQuery: historyFilterQuery,
+    setFilterQuery: setHistoryFilterQuery,
+    currentHistoryId,
+    isLoadingList: historyLoading,
+    isRestoring: historyRestoring,
+    collapsed: historyCollapsed,
+    setCollapsed: setHistoryCollapsed,
+    beginSessionFromFile,
+    upsertActiveSession,
+    restoreEntry,
+    removeEntry,
+    renameEntry,
+  } = useEditHistory();
+
+  const revokeOwnedImageUrl = useCallback(() => {
+    if (ownedImageUrlRef.current) {
+      URL.revokeObjectURL(ownedImageUrlRef.current);
+      ownedImageUrlRef.current = null;
+    }
+  }, []);
+
+  const buildHistorySettings = useCallback((): EditHistorySettings => {
+    return {
+      removeBackground,
+      tolerance,
+      padding,
+      roundedCorners,
+      cornerRadiusPercent,
+      interactiveCropBounds,
+      watermarkEnabled,
+      watermarkColorMode,
+      watermarkOpacityPercent,
+      liquidGlassOpacityPercent,
+      selectedFormat,
+      upscaleMultiplier,
+      watermarkPosition,
+      watermarkSize,
+      previewBackgroundOverride,
+      watermarkClientMessageDirty,
+      watermarkClientMessage: watermarkClientMessageDirty ? watermarkClientMessage : null,
+    };
+  }, [
+    removeBackground,
+    tolerance,
+    padding,
+    roundedCorners,
+    cornerRadiusPercent,
+    interactiveCropBounds,
+    watermarkEnabled,
+    watermarkColorMode,
+    watermarkOpacityPercent,
+    liquidGlassOpacityPercent,
+    selectedFormat,
+    upscaleMultiplier,
+    watermarkPosition,
+    watermarkSize,
+    previewBackgroundOverride,
+    watermarkClientMessageDirty,
+    watermarkClientMessage,
+  ]);
+
+  const applyHistorySettings = useCallback((settings: EditHistorySettings) => {
+    setRemoveBackground(settings.removeBackground);
+    setTolerance(settings.tolerance);
+    setPadding(settings.padding);
+    setRoundedCorners(settings.roundedCorners);
+    setCornerRadiusPercent(settings.cornerRadiusPercent);
+    setInteractiveCropBounds(settings.interactiveCropBounds);
+    setWatermarkEnabled(settings.watermarkEnabled);
+    setWatermarkColorMode(settings.watermarkColorMode);
+    setWatermarkOpacityPercent(settings.watermarkOpacityPercent);
+    setLiquidGlassOpacityPercent(settings.liquidGlassOpacityPercent);
+    setSelectedFormat(settings.selectedFormat);
+    setUpscaleMultiplier(settings.upscaleMultiplier);
+    setWatermarkPosition(settings.watermarkPosition);
+    setWatermarkSize(settings.watermarkSize);
+    setPreviewBackgroundOverride(settings.previewBackgroundOverride);
+    if (settings.watermarkClientMessageDirty && settings.watermarkClientMessage) {
+      setWatermarkClientMessage(settings.watermarkClientMessage);
+      setWatermarkClientMessageDirty(true);
+    } else {
+      setWatermarkClientMessageDirty(false);
+    }
+  }, []);
 
   // Favicons are tiny and already square-cropped by hosts, so rounding is noise there.
   const roundedCornersSupported = selectedFormat !== 'favicon';
@@ -255,19 +349,106 @@ export default function App() {
     setInteractiveCropBounds(bounds);
   }, []);
 
-  const loadImageFromFile = useCallback((file: File, options?: { showPastedToast?: boolean }) => {
-    if (!isImageMimeType(file.type)) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      setImageSrc(result);
+  const loadImageFromFile = useCallback(
+    (file: File, options?: { showPastedToast?: boolean }) => {
+      if (!isImageMimeType(file.type)) return;
+      revokeOwnedImageUrl();
+      const objectUrl = URL.createObjectURL(file);
+      ownedImageUrlRef.current = objectUrl;
+      sourceFileNameRef.current = file.name;
+      skipHistoryUpsertRef.current = true;
+      setImageSrc(objectUrl);
       setInteractiveCropBounds(null);
-      if (options?.showPastedToast) {
-        setPasteToastMessage('Imagem colada');
+      void beginSessionFromFile(file, buildHistorySettings())
+        .then(() => {
+          if (options?.showPastedToast) {
+            setPasteToastMessage('Imagem colada');
+          }
+        })
+        .catch((error: unknown) => {
+          const msg =
+            error instanceof Error && error.message === 'quota'
+              ? 'Armazenamento cheio — limpe itens do histórico'
+              : 'Não foi possível salvar no histórico';
+          setPasteToastMessage(msg);
+        })
+        .finally(() => {
+          skipHistoryUpsertRef.current = false;
+        });
+    },
+    [beginSessionFromFile, buildHistorySettings, revokeOwnedImageUrl]
+  );
+
+  const handleRestoreHistory = useCallback(
+    async (id: string) => {
+      try {
+        const restored = await restoreEntry(id);
+        if (!restored) {
+          setPasteToastMessage('Item não encontrado no histórico');
+          return;
+        }
+        skipHistoryUpsertRef.current = true;
+        revokeOwnedImageUrl();
+        ownedImageUrlRef.current = restored.imageUrl;
+        sourceFileNameRef.current = restored.entry.sourceFileName;
+        applyHistorySettings(restored.entry.settings);
+        setImageSrc(restored.imageUrl);
+        setPasteToastMessage(`Abrindo: ${restored.entry.displayName}`);
+        window.setTimeout(() => {
+          skipHistoryUpsertRef.current = false;
+        }, 900);
+      } catch {
+        setPasteToastMessage('Não foi possível abrir o histórico');
       }
-    };
-    reader.readAsDataURL(file);
-  }, []);
+    },
+    [applyHistorySettings, restoreEntry, revokeOwnedImageUrl]
+  );
+
+  const handleDeleteHistory = useCallback(
+    async (id: string) => {
+      try {
+        await removeEntry(id);
+        setPasteToastMessage('Removido do histórico');
+      } catch {
+        setPasteToastMessage('Não foi possível excluir');
+      }
+    },
+    [removeEntry]
+  );
+
+  const handleRenameHistory = useCallback(
+    async (id: string, name: string) => {
+      try {
+        await renameEntry(id, name);
+      } catch {
+        setPasteToastMessage('Não foi possível renomear');
+      }
+    },
+    [renameEntry]
+  );
+
+  // Persist setting changes into the active history session (debounced).
+  const historySettingsSnapshot = useMemo(
+    () => buildHistorySettings(),
+    [buildHistorySettings]
+  );
+  const debouncedHistorySettings = useDebouncedValue(historySettingsSnapshot, 600);
+
+  useEffect(() => {
+    if (!imageSrc || !currentHistoryId) return;
+    if (skipHistoryUpsertRef.current) return;
+    void upsertActiveSession(imageSrc, debouncedHistorySettings, {
+      sourceFileName: sourceFileNameRef.current,
+    }).catch((error: unknown) => {
+      if (error instanceof Error && error.message === 'quota') {
+        setPasteToastMessage('Armazenamento cheio — limpe itens do histórico');
+      }
+    });
+  }, [currentHistoryId, debouncedHistorySettings, imageSrc, upsertActiveSession]);
+
+  useEffect(() => {
+    return () => revokeOwnedImageUrl();
+  }, [revokeOwnedImageUrl]);
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -417,7 +598,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50/90 via-white to-orange-50/70 font-sans text-loft-green">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-5 space-y-5">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5 space-y-5">
         <header className="glass-panel flex items-center justify-between gap-4 px-4 sm:px-6 py-3">
           <div className="flex items-center gap-3 min-w-0">
             <span className="hidden sm:inline-flex items-center justify-center rounded-full bg-loft-orange/10 text-loft-orange w-9 h-9">
@@ -441,26 +622,62 @@ export default function App() {
           </div>
         </header>
 
-        {imageSrc && (
-          <div className="flex lg:hidden sticky top-2 z-40 gap-2 justify-center flex-wrap">
-            <button
-              type="button"
-              onClick={() => scrollToId('section-crop')}
-              className="inline-flex items-center gap-1 rounded-full border border-white/60 bg-white/85 px-4 py-2 text-xs font-semibold text-loft-green shadow-loft backdrop-blur-md"
-            >
-              Ir para o recorte <ChevronDown size={14} className="opacity-70" />
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToId('section-export')}
-              className="inline-flex items-center gap-1 rounded-full border border-white/60 bg-loft-green/90 px-4 py-2 text-xs font-semibold text-white shadow-loft backdrop-blur-md hover:bg-loft-green"
-            >
-              Ir para exportar <ChevronDown size={14} className="opacity-80" />
-            </button>
-          </div>
-        )}
+        <div className="flex lg:hidden sticky top-2 z-40 gap-2 justify-center flex-wrap">
+          <HistorySidebar
+            variant="mobile"
+            items={historyItems}
+            filterQuery={historyFilterQuery}
+            onFilterChange={setHistoryFilterQuery}
+            currentHistoryId={currentHistoryId}
+            isLoadingList={historyLoading}
+            isRestoring={historyRestoring}
+            collapsed={historyCollapsed}
+            onToggleCollapsed={() => setHistoryCollapsed(!historyCollapsed)}
+            onSelect={(id) => void handleRestoreHistory(id)}
+            onDelete={(id) => void handleDeleteHistory(id)}
+            onRename={(id, name) => void handleRenameHistory(id, name)}
+            mobileOpen={historyMobileOpen}
+            onMobileOpenChange={setHistoryMobileOpen}
+          />
+          {imageSrc && (
+            <>
+              <button
+                type="button"
+                onClick={() => scrollToId('section-crop')}
+                className="inline-flex items-center gap-1 rounded-full border border-white/60 bg-white/85 px-4 py-2 text-xs font-semibold text-loft-green shadow-loft backdrop-blur-md"
+              >
+                Ir para o recorte <ChevronDown size={14} className="opacity-70" />
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollToId('section-export')}
+                className="inline-flex items-center gap-1 rounded-full border border-white/60 bg-loft-green/90 px-4 py-2 text-xs font-semibold text-white shadow-loft backdrop-blur-md hover:bg-loft-green"
+              >
+                Ir para exportar <ChevronDown size={14} className="opacity-80" />
+              </button>
+            </>
+          )}
+        </div>
 
-        <div className="glass-panel p-6 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10">
+        <div className="flex items-start gap-4 lg:gap-5">
+          <HistorySidebar
+            variant="desktop"
+            items={historyItems}
+            filterQuery={historyFilterQuery}
+            onFilterChange={setHistoryFilterQuery}
+            currentHistoryId={currentHistoryId}
+            isLoadingList={historyLoading}
+            isRestoring={historyRestoring}
+            collapsed={historyCollapsed}
+            onToggleCollapsed={() => setHistoryCollapsed(!historyCollapsed)}
+            onSelect={(id) => void handleRestoreHistory(id)}
+            onDelete={(id) => void handleDeleteHistory(id)}
+            onRename={(id, name) => void handleRenameHistory(id, name)}
+            mobileOpen={historyMobileOpen}
+            onMobileOpenChange={setHistoryMobileOpen}
+          />
+
+          <div className="glass-panel p-6 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 min-w-0 flex-1">
           <div className="order-1 flex flex-col gap-8 lg:order-none lg:col-span-8">
             {!imageSrc ? (
               <div className="glass-panel-inset min-h-[280px] flex flex-col items-center justify-center p-8 border-dashed">
@@ -1188,10 +1405,11 @@ export default function App() {
               </>
             )}
           </aside>
+          </div>
         </div>
 
         <footer className="pb-6 text-center text-xs text-loft-green/55">
-          Processamento local no navegador — sua imagem não é enviada a servidores de edição.
+          Processamento local no navegador — histórico e imagens ficam só neste navegador.
         </footer>
       </div>
 
