@@ -87,11 +87,6 @@ export function HistorySidebar({
         </button>
       </div>
 
-      <p className="px-3 text-[11px] leading-snug text-loft-green/60">
-        Salvo só neste navegador. Miniatura: fundo escuro se a logo for clara,
-        claro se for colorida.
-      </p>
-
       <div className="px-3 pt-3 pb-2">
         <label className="relative block">
           <Search
